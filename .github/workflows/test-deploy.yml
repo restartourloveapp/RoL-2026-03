@@ -25,13 +25,14 @@ jobs:
       - name: Create Firebase Config from Secret
         id: config_step
         run: |
-          echo "{" > config-temp.json
-          echo "${{ secrets.FIREBASE_CONFIG_TEST }}" >> config-temp.json
-          echo "}" >> config-temp.json
-          # Format the config and extract PROJECT_ID, then set it to an output
-          PROJECT_ID=$(python3 -c "import json; c = json.load(open('config-temp.json')); print(c.get('projectId', ''))")
+          # Create a valid JSON object from the secret
+          echo '{' > firebase-applet-config.json
+          echo "${{ secrets.FIREBASE_CONFIG_TEST }}" >> firebase-applet-config.json
+          echo '}' >> firebase-applet-config.json
+          
+          # Use node to parse the config and extract PROJECT_ID to avoid Python whitespace/format issues
+          PROJECT_ID=$(node -e "const fs = require('fs'); const config = JSON.parse(fs.readFileSync('firebase-applet-config.json', 'utf8')); console.log(config.projectId || '');")
           echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_OUTPUT
-          python3 -c "import json; c = json.load(open('config-temp.json')); open('firebase-applet-config.json', 'w').write(json.dumps(c))"
 
       - name: Build Web App
         run: npm run build
