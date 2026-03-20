@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install Dependencies
@@ -27,9 +27,10 @@ jobs:
         run: |
           # Use a heredoc to safely write the secret to a temporary CJS file
           # (using .cjs to bypass "type": "module" in package.json)
-          cat <<EOF > config_builder.cjs
+          cat <<'EOF' > config_builder.cjs
           const fs = require('fs');
-          const secretContent = \`${{ secrets.FIREBASE_CONFIG_TEST }}\`;
+          // Injected via environment variable to handle special characters and whitespace
+          const secretContent = process.env.RAW_SECRET;
           try {
             const raw = secretContent.trim();
             const jsonString = raw.startsWith('{') ? raw : '{' + raw + '}';
@@ -38,13 +39,14 @@ jobs:
             console.log('PROJECT_ID=' + config.projectId);
           } catch (e) {
             console.error('Failed to parse FIREBASE_CONFIG_TEST. Ensure it is valid JSON.');
+            console.error('Literal content attempted: ' + secretContent);
             console.error(e.message);
             process.exit(1);
           }
           EOF
           
-          # Run the builder and capture Project ID
-          OUTPUT=$(node config_builder.cjs)
+          # Run the builder with the secret passed as an environment variable
+          OUTPUT=$(RAW_SECRET="${{ secrets.FIREBASE_CONFIG_TEST }}" node config_builder.cjs)
           echo "$OUTPUT" >> $GITHUB_OUTPUT
 
       - name: Build Web App
