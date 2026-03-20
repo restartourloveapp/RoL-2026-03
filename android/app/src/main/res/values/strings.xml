@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">RoL</string>
+    <string name="title_activity_main">RoL</string>
+    <string name="package_name">com.restartourlove.app</string>
+    <string name="custom_url_scheme">com.restartourlove.app</string>
+</resources>

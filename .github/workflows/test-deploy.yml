@@ -1,0 +1,48 @@
+name: Deploy Test (Web)
+
+on:
+  push:
+    branches:
+      - main # Continuous deployment to test from main branch
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Create Firebase Config from Secret
+        id: config_step
+        run: |
+          echo "{" > config-temp.json
+          echo "${{ secrets.FIREBASE_CONFIG_TEST }}" >> config-temp.json
+          echo "}" >> config-temp.json
+          # Format the config and extract PROJECT_ID, then set it to an output
+          PROJECT_ID=$(python3 -c "import json; c = json.load(open('config-temp.json')); print(c.get('projectId', ''))")
+          echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_OUTPUT
+          python3 -c "import json; c = json.load(open('config-temp.json')); open('firebase-applet-config.json', 'w').write(json.dumps(c))"
+
+      - name: Build Web App
+        run: npm run build
+        env:
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_TEST }}
+          VITE_FIREBASE_PROJECT_ID: ${{ steps.config_step.outputs.PROJECT_ID }}
+
+      - name: Deploy to Firebase Hosting (Test)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TEST }}'
+          channelId: live
+          projectId: ${{ steps.config_step.outputs.PROJECT_ID }}

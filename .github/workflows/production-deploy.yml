@@ -1,0 +1,151 @@
+name: Deploy Production (Web, Android, iOS)
+
+on:
+  workflow_dispatch: # Manual promotion from acceptance to production
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version }} # Deploy specific version
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Create Firebase Config from Secret
+        run: |
+          echo "{" > firebase-applet-config.json
+          echo "${{ secrets.FIREBASE_CONFIG_PROD }}" >> firebase-applet-config.json
+          echo "}" >> firebase-applet-config.json
+
+      - name: Build Web App (Production)
+        run: npm run build
+        env:
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_PROD }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+
+      - name: Deploy to Firebase Hosting (Production)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}'
+          channelId: live
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+
+  deploy-android:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npm install @capacitor/android @capacitor/core @capacitor/cli
+
+      - name: Create Firebase Config from Secret
+        run: |
+          echo "{" > firebase-applet-config.json
+          echo "${{ secrets.FIREBASE_CONFIG_PROD }}" >> firebase-applet-config.json
+          echo "}" >> firebase-applet-config.json
+
+      - name: Build Web App (Mobile Source)
+        run: npm run build
+        env:
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_PROD }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+
+      - name: Sync Capacitor
+        run: |
+          npx cap add android || true
+          npx cap sync android
+
+      - name: Build Android App (Release AAB)
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew bundleRelease
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Upload Android Artifact to Play Console
+        # Using a tool like r0adkll/upload-google-play to upload the AAB
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_CONSOLE_SERVICE_ACCOUNT_JSON }}
+          packageName: com.restartourlove.app
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: production
+
+  deploy-ios:
+    runs-on: macos-latest
+    environment: production
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npm install @capacitor/ios @capacitor/core @capacitor/cli
+
+      - name: Create Firebase Config from Secret
+        run: |
+          echo "{" > firebase-applet-config.json
+          echo "${{ secrets.FIREBASE_CONFIG_PROD }}" >> firebase-applet-config.json
+          echo "}" >> firebase-applet-config.json
+
+      - name: Build Web App (Mobile Source)
+        run: npm run build
+        env:
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_PROD }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+
+      - name: Sync Capacitor
+        run: |
+          npx cap add ios || true
+          npx cap sync ios
+
+      - name: Build iOS App (Release IPA)
+        # Placeholder for building and uploading the IPA to the App Store using Fastlane or direct xcodebuild
+        run: |
+          echo "Building iOS IPA..."
+          # fastlane ios release
+        env:
+          APPLE_APP_STORE_ISSUER_ID: ${{ secrets.APPLE_APP_STORE_ISSUER_ID }}
+          APPLE_APP_STORE_KEY_ID: ${{ secrets.APPLE_APP_STORE_KEY_ID }}
+          APPLE_APP_STORE_KEY_P8_CONTENT: ${{ secrets.APPLE_APP_STORE_KEY_P8_CONTENT }}

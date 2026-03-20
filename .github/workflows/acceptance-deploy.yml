@@ -1,0 +1,137 @@
+name: Deploy Acceptance (Web, Android, iOS)
+
+on:
+  workflow_dispatch: # Promoted from test to acceptance manually or after approval
+  release:
+    types: [published] # Promoted when a release is tagged
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    environment: acceptance
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Create Firebase Config from Secret
+        run: |
+          echo "{" > firebase-applet-config.json
+          echo "${{ secrets.FIREBASE_CONFIG_ACC }}" >> firebase-applet-config.json
+          echo "}" >> firebase-applet-config.json
+
+      - name: Build Web App
+        run: npm run build
+        env:
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_ACC }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_ACC }}
+
+      - name: Deploy to Firebase Hosting (Acceptance)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_ACC }}'
+          channelId: live
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID_ACC }}
+
+  deploy-android:
+    runs-on: ubuntu-latest
+    environment: acceptance
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npm install @capacitor/android @capacitor/core @capacitor/cli
+
+      - name: Create Firebase Config from Secret
+        run: |
+          echo "{" > firebase-applet-config.json
+          echo "${{ secrets.FIREBASE_CONFIG_ACC }}" >> firebase-applet-config.json
+          echo "}" >> firebase-applet-config.json
+
+      - name: Build Web App (Mobile Source)
+        run: npm run build
+        env:
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_ACC }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_ACC }}
+
+      - name: Sync Capacitor
+        run: |
+          npx cap add android || true
+          npx cap sync android
+
+      - name: Build Android App (Release AAB/APK)
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew bundleRelease
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-android-release
+          path: android/app/build/outputs/bundle/release/app-release.aab
+
+  deploy-ios:
+    runs-on: macos-latest
+    environment: acceptance
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npm install @capacitor/ios @capacitor/core @capacitor/cli
+
+      - name: Create Firebase Config from Secret
+        run: |
+          echo "{" > firebase-applet-config.json
+          echo "${{ secrets.FIREBASE_CONFIG_ACC }}" >> firebase-applet-config.json
+          echo "}" >> firebase-applet-config.json
+
+      - name: Build Web App (Mobile Source)
+        run: npm run build
+        env:
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_ACC }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_ACC }}
+
+      - name: Sync Capacitor
+        run: |
+          npx cap add ios || true
+          npx cap sync ios
+
+      - name: Build iOS App (IPA)
+        run: |
+          # Requires certificates and provisioning profiles to be configured in GitHub Secrets and installed on the runner
+          # For now, this is a placeholder for the Xcode build command
+          echo "Building iOS..."
+          # xcodebuild -workspace ios/App/App.xcworkspace -scheme App -archivePath ios/App.xcarchive archive
+          # xcodebuild -exportArchive -archivePath ios/App.xcarchive -exportOptionsPlist exportOptions.plist -exportPath ios/build

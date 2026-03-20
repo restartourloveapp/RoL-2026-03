@@ -1,0 +1,8 @@
+{
+  "name": "Restart Our Love",
+  "description": "A private, AI-powered relationship guidance platform for couples and individuals, focusing on safety, empathy, and early intervention.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

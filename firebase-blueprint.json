@@ -1,0 +1,294 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user metadata and security verifiers. Sensitive data like KEK/CK is NOT stored here.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "pinSalt": { "type": "string", "description": "Salt used for KEK derivation" },
+        "pinVerifier": { "type": "string", "description": "Hashed PIN for verification (SHA-256/Argon2id)" },
+        "wrappedCK": { 
+          "type": "object", 
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "User's Communication Key (CK) wrapped with KEK" 
+        },
+        "exchangePublicKey": { "type": "string" },
+        "wrappedExchangePrivateKey": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          }
+        },
+        "wrappedRK": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "partnerUid": { "type": "string", "description": "UID of the linked partner (if any)" },
+        "partnerStatus": { "type": "string", "enum": ["none", "pending", "linked"] },
+        "profileName": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "Encrypted name of the account holder"
+        },
+        "profilePronouns": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "Encrypted pronouns of the account holder"
+        },
+        "partnerName": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "Encrypted name of the partner"
+        },
+        "partnerPronouns": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "Encrypted pronouns of the partner"
+        },
+        "defaultCoupleCoach": { "type": "string", "enum": ["solin", "kael", "ravian", "amari", "leora"] }
+      },
+      "required": ["uid", "email", "pinVerifier", "pinSalt", "wrappedCK"]
+    },
+    "Session": {
+      "title": "Relationship Session",
+      "description": "A chat session between a user (or couple) and an AI coach.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "partnerUid": { "type": "string" },
+        "coachPersona": { "type": "string", "enum": ["solin", "kael", "ravian", "amari", "leora", "Direct", "Soft", "Empathic"] },
+        "coachGender": { "type": "string", "enum": ["Male", "Female", "male", "female"] },
+        "type": { "type": "string", "enum": ["personal", "couple"] },
+        "status": { "type": "string", "enum": ["active", "archived", "summary_pending"] },
+        "wrappedSSK": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "Session Symmetric Key (SSK) wrapped with Owner's CK"
+        },
+        "partnerWrappedSSK": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "SSK wrapped with Partner's CK (for couple sessions)"
+        },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "messageCount": { "type": "integer", "description": "Total number of messages in the session" },
+        "lastCheckpointSummary": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "Encrypted summary of the conversation up to the last checkpoint"
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "ciphertext": { "type": "string" },
+            "iv": { "type": "string" }
+          },
+          "description": "Encrypted final session summary"
+        }
+      },
+      "required": ["ownerUid", "coachPersona", "coachGender", "type", "status", "wrappedSSK"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A single message in a session, encrypted with the SSK.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "senderUid": { "type": "string", "description": "UID of the sender (or 'ai')" },
+        "content": { "type": "string", "description": "Encrypted message content" },
+        "iv": { "type": "string", "description": "Initialization Vector for AES-GCM" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["user", "assistant", "system"] }
+      },
+      "required": ["sessionId", "senderUid", "content", "iv", "createdAt", "role"]
+    },
+    "PartnerRequest": {
+      "title": "Partner Linking Request",
+      "description": "A request to link two users as partners.",
+      "type": "object",
+      "properties": {
+        "fromUid": { "type": "string" },
+        "toEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fromUid", "toEmail", "status", "createdAt"]
+    },
+    "Ticket": {
+      "title": "Support Ticket",
+      "description": "A support request containing plaintext snippets for debugging.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userUid": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "plaintextSnippet": { "type": "string", "description": "Optional plaintext message snippet for support" },
+        "fileUrl": { "type": "string", "description": "URL to attached file in Firebase Storage" },
+        "status": { "type": "string", "enum": ["open", "in_progress", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userUid", "subject", "description", "status", "createdAt"]
+    },
+    "TimelineEntry": {
+      "title": "Timeline Entry",
+      "description": "A milestone, insight, or breakthrough in the relationship journey.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "partnerUid": { "type": "string" },
+        "title": { "type": "string", "description": "Encrypted title" },
+        "titleIv": { "type": "string" },
+        "description": { "type": "string", "description": "Encrypted description" },
+        "descriptionIv": { "type": "string" },
+        "type": { "type": "string", "enum": ["milestone", "insight", "breakthrough"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "ownerUid", "title", "titleIv", "description", "descriptionIv", "type", "createdAt"]
+    },
+    "Homework": {
+      "title": "Homework Task",
+      "description": "A specific task or exercise suggested by the coach.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "partnerUid": { "type": "string" },
+        "title": { "type": "string", "description": "Encrypted title" },
+        "titleIv": { "type": "string" },
+        "description": { "type": "string", "description": "Encrypted description" },
+        "descriptionIv": { "type": "string" },
+        "status": { "type": "string", "enum": ["assigned", "completed", "skipped"] },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "ownerUid", "title", "titleIv", "description", "descriptionIv", "status", "createdAt"]
+    },
+    "CrisisResource": {
+      "title": "Crisis Resource",
+      "description": "Emergency contact information and support resources.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "website": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["suicide", "domestic_violence", "mental_health", "general"] }
+      },
+      "required": ["name", "category"]
+    },
+    "MessageSummary": {
+      "title": "Message Summary",
+      "description": "An encrypted summary of a block of messages (e.g., 20 messages) within a session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "startMessageIndex": { "type": "integer" },
+        "endMessageIndex": { "type": "integer" },
+        "ciphertext": { "type": "string" },
+        "iv": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "startMessageIndex", "endMessageIndex", "ciphertext", "iv", "createdAt"]
+    },
+    "SessionMetaSummary": {
+      "title": "Session Meta-Summary",
+      "description": "An encrypted summary of a block of sessions (e.g., 10 sessions).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "partnerUid": { "type": "string", "description": "Optional, for couple meta-summaries" },
+        "startSessionIndex": { "type": "integer" },
+        "endSessionIndex": { "type": "integer" },
+        "ciphertext": { "type": "string" },
+        "iv": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "startSessionIndex", "endSessionIndex", "ciphertext", "iv", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/users/{uid}/session_meta_summaries/{summaryId}": {
+      "schema": "SessionMetaSummary",
+      "description": "Summaries of blocks of sessions"
+    },
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Chat sessions"
+    },
+    "/sessions/{sessionId}/message_summaries/{summaryId}": {
+      "schema": "MessageSummary",
+      "description": "Summaries of blocks of messages"
+    },
+    "/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a session"
+    },
+    "/partner_requests/{requestId}": {
+      "schema": "PartnerRequest",
+      "description": "Partner linking requests"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "Ticket",
+      "description": "Support tickets"
+    },
+    "/timeline/{entryId}": {
+      "schema": "TimelineEntry",
+      "description": "Relationship milestones"
+    },
+    "/homework/{homeworkId}": {
+      "schema": "Homework",
+      "description": "Assigned tasks"
+    },
+    "/crisis_resources/{resourceId}": {
+      "schema": "CrisisResource",
+      "description": "Emergency resources"
+    }
+  }
+}
