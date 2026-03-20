@@ -25,26 +25,26 @@ jobs:
       - name: Create Firebase Config from Secret
         id: config_step
         run: |
-          # Use a heredoc to safely write the secret to a temporary JS file
-          cat <<EOF > config_builder.js
+          # Use a heredoc to safely write the secret to a temporary CJS file
+          # (using .cjs to bypass "type": "module" in package.json)
+          cat <<EOF > config_builder.cjs
           const fs = require('fs');
           const secretContent = \`${{ secrets.FIREBASE_CONFIG_TEST }}\`;
           try {
-            // Add braces and parse. This handles both "key": "value" and { "key": "value" }
             const raw = secretContent.trim();
             const jsonString = raw.startsWith('{') ? raw : '{' + raw + '}';
             const config = JSON.parse(jsonString);
             fs.writeFileSync('firebase-applet-config.json', JSON.stringify(config, null, 2));
             console.log('PROJECT_ID=' + config.projectId);
           } catch (e) {
-            console.error('Failed to parse FIREBASE_CONFIG_TEST. Ensure it is valid JSON content.');
+            console.error('Failed to parse FIREBASE_CONFIG_TEST. Ensure it is valid JSON.');
             console.error(e.message);
             process.exit(1);
           }
           EOF
           
           # Run the builder and capture Project ID
-          OUTPUT=$(node config_builder.js)
+          OUTPUT=$(node config_builder.cjs)
           echo "$OUTPUT" >> $GITHUB_OUTPUT
 
       - name: Build Web App
