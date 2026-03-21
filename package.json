@@ -16,7 +16,7 @@
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
-    "@firebase/vertexai": "^1.2.4",
+    "@firebase/vertexai": "^1.2.3",
     "@firebase/vertexai-preview": "^0.0.4",
     "@google-cloud/vertexai": "^1.10.2",
     "@google/genai": "^1.29.0",

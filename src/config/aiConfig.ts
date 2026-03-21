@@ -22,7 +22,7 @@ export const AI_CONFIG = {
   INCLUDE_LAST_HOMEWORK: true,
   
   // --- AI Model Settings ---
-  MODEL_NAME: "gemini-3.0-flash",
+  MODEL_NAME: "gemini-3-flash-preview",
   DEFAULT_TEMPERATURE: 0.7,
   SUMMARY_TEMPERATURE: 0.3, // Lower temperature for more factual summaries
 };
