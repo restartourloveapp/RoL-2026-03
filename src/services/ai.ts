@@ -1,6 +1,7 @@
-import { GoogleGenAI } from "@google/genai";
 import { COACH_SYSTEM_PROMPTS } from "../config/prompts";
 import { AI_CONFIG } from "../config/aiConfig";
+import { vertexAI } from "../firebase";
+import { getGenerativeModel, Content } from "@firebase/vertexai";
 
 export type CoachPersona = 'solin' | 'kael' | 'ravian' | 'amari' | 'leora';
 export type CoachGender = 'male' | 'female';
@@ -23,8 +24,6 @@ export async function generateCoachResponse(
     isPremium?: boolean
   }
 ) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-  
   const langKey = language === 'nl' ? 'nl' : 'en';
   const personaPrompt = COACH_SYSTEM_PROMPTS[langKey][persona];
 
@@ -104,9 +103,14 @@ export async function generateCoachResponse(
   - "both" if you are addressing both.
   - "none" if no specific person is addressed.`;
 
-  const contents = [
+  const vertexModel = getGenerativeModel(vertexAI, {
+    model: AI_CONFIG.MODEL_NAME,
+    systemInstruction,
+  });
+
+  const contents: Content[] = [
     ...history.map(h => ({
-      role: h.role,
+      role: h.role as "user" | "model",
       parts: [{ text: h.content }]
     })),
     {
@@ -115,24 +119,22 @@ export async function generateCoachResponse(
     }
   ];
 
-  const response = await ai.models.generateContent({
-    model: AI_CONFIG.MODEL_NAME,
+  const result = await vertexModel.generateContent({
     contents,
-    config: {
-      systemInstruction,
+    generationConfig: {
       temperature: AI_CONFIG.DEFAULT_TEMPERATURE,
       responseMimeType: "application/json"
     }
   });
 
-  const text = response.text;
-  if (!text) return null;
+  const responseText = result.response.text();
+  if (!responseText) return null;
   
   try {
-    return JSON.parse(text);
+    return JSON.parse(responseText);
   } catch (e) {
-    console.error("Failed to parse AI response as JSON", e, text);
-    return { text: text, nextSpeaker: 'none' };
+    console.error("Failed to parse AI response as JSON", e, responseText);
+    return { text: responseText, nextSpeaker: 'none' };
   }
 }
 
@@ -140,8 +142,6 @@ export async function generateResponseTip(
   history: { role: 'user' | 'model', content: string }[],
   language: string = 'nl'
 ) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-  
   const systemInstruction = `You are a relationship communication expert. 
   Based on the following conversation history, suggest ONE brief, actionable response for the user.
   Use techniques like:
@@ -151,9 +151,14 @@ export async function generateResponseTip(
   Focus on empathy and connection. Keep it under 50 words.
   IMPORTANT: You MUST respond in the following language: ${language === 'nl' ? 'Dutch (Nederlands)' : 'English'}.`;
 
-  const contents = [
+  const tipModel = getGenerativeModel(vertexAI, {
+    model: AI_CONFIG.MODEL_NAME,
+    systemInstruction,
+  });
+
+  const contents: Content[] = [
     ...history.map(h => ({
-      role: h.role,
+      role: h.role as "user" | "model",
       parts: [{ text: h.content }]
     })),
     {
@@ -162,16 +167,14 @@ export async function generateResponseTip(
     }
   ];
 
-  const response = await ai.models.generateContent({
-    model: AI_CONFIG.MODEL_NAME,
+  const result = await tipModel.generateContent({
     contents,
-    config: {
-      systemInstruction,
-      temperature: 0.7,
+    generationConfig: {
+      temperature: AI_CONFIG.DEFAULT_TEMPERATURE || 0.7,
     }
   });
 
-  return response.text;
+  return result.response.text();
 }
 
 export async function generateSummary(
@@ -179,8 +182,6 @@ export async function generateSummary(
   language: string = 'nl',
   isPremium: boolean = false
 ) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-  
   let ctaInstruction = "";
   if (!isPremium) {
     ctaInstruction = `
@@ -215,9 +216,14 @@ export async function generateSummary(
   Keep it structured, encouraging, and deeply professional.
   IMPORTANT: All text fields in the JSON response (summary, title, description) MUST be in the following language: ${language === 'nl' ? 'Dutch (Nederlands)' : 'English'}.`;
 
-  const contents = [
+  const summaryModel = getGenerativeModel(vertexAI, {
+    model: AI_CONFIG.MODEL_NAME,
+    systemInstruction,
+  });
+
+  const contents: Content[] = [
     ...history.map(h => ({
-      role: h.role,
+      role: h.role as "user" | "model",
       parts: [{ text: h.content }]
     })),
     {
@@ -226,17 +232,15 @@ export async function generateSummary(
     }
   ];
 
-  const response = await ai.models.generateContent({
-    model: AI_CONFIG.MODEL_NAME,
+  const result = await summaryModel.generateContent({
     contents,
-    config: {
-      systemInstruction,
-      temperature: 0.5,
+    generationConfig: {
+      temperature: AI_CONFIG.SUMMARY_TEMPERATURE || 0.5,
       responseMimeType: "application/json"
     }
   });
 
-  const text = response.text;
+  const text = result.response.text();
   if (!text) return null;
   
   try {
@@ -251,37 +255,47 @@ export async function generateMessageSummary(
   messages: { role: 'user' | 'model', content: string }[],
   language: string = 'nl'
 ) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
   const systemInstruction = `Summarize the following conversation block in a few concise sentences. 
   Focus on the main topics discussed and the emotional tone. 
   This summary will be used as context for future messages.
   Language: ${language === 'nl' ? 'Dutch' : 'English'}`;
 
-  const response = await ai.models.generateContent({
+  const msgModel = getGenerativeModel(vertexAI, {
     model: AI_CONFIG.MODEL_NAME,
-    contents: messages.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
-    config: { systemInstruction, temperature: AI_CONFIG.SUMMARY_TEMPERATURE }
+    systemInstruction,
   });
 
-  return response.text;
+  const result = await msgModel.generateContent({
+    contents: messages.map(m => ({ role: m.role as "user" | "model", parts: [{ text: m.content }] })),
+    generationConfig: {
+      temperature: AI_CONFIG.SUMMARY_TEMPERATURE
+    }
+  });
+
+  return result.response.text();
 }
 
 export async function generateMetaSummary(
   summaries: string[],
   language: string = 'nl'
 ) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
   const systemInstruction = `The following are summaries of previous coaching sessions. 
   Create a single "meta-summary" that captures the long-term progress, recurring themes, and major breakthroughs.
   Keep it concise but deeply insightful.
   Language: ${language === 'nl' ? 'Dutch' : 'English'}`;
 
-  const response = await ai.models.generateContent({
+  const metaModel = getGenerativeModel(vertexAI, {
     model: AI_CONFIG.MODEL_NAME,
-    contents: [{ role: 'user', parts: [{ text: summaries.join("\n\n---\n\n") }] }],
-    config: { systemInstruction, temperature: AI_CONFIG.SUMMARY_TEMPERATURE }
+    systemInstruction,
   });
 
-  return response.text;
+  const result = await metaModel.generateContent({
+    contents: [{ role: 'user' as "user", parts: [{ text: summaries.join("\n\n---\n\n") }] }],
+    generationConfig: {
+      temperature: AI_CONFIG.SUMMARY_TEMPERATURE
+    }
+  });
+
+  return result.response.text();
 }
 
