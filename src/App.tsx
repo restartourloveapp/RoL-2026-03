@@ -1129,9 +1129,12 @@ function MainApp() {
       wrappedSSK: wrappedSSK
     };
 
-    if (partnerWrappedSSK) {
+    // Always set partnerUid for couple sessions (independent of key wrapping)
+    if (newSessionConfig.type === 'couple') {
       sessionData.partnerUid = profile?.partnerUid;
-      sessionData.partnerWrappedSSK = partnerWrappedSSK;
+      if (partnerWrappedSSK) {
+        sessionData.partnerWrappedSSK = partnerWrappedSSK;
+      }
     }
 
     const sessionRef = await addDoc(collection(db, 'sessions'), sessionData);
