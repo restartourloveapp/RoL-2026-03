@@ -1479,12 +1479,14 @@ function MainApp() {
       // Encrypt message with SSK
       const encrypted = await Encryption.encryptText(text, activeSSK);
 
-      const senderUid = (activeSession.type === 'couple' && selectedSpeakerUid) 
+      const senderUid = user!.uid; // Always save the user account owner
+      const senderProfileId = (activeSession.type === 'couple' && selectedSpeakerUid) 
         ? selectedSpeakerUid 
-        : user!.uid;
+        : profile?.profileId;
 
       await addDoc(collection(db, 'sessions', activeSession.id, 'messages'), {
         senderUid,
+        senderProfileId,
         content: encrypted.ciphertext,
         iv: encrypted.iv,
         createdAt: serverTimestamp(),
@@ -1707,10 +1709,12 @@ function MainApp() {
         
         if (m.senderUid === 'ai_coach') {
           role = 'model';
-        } else if (m.senderUid === user!.uid) {
+        } else if (m.senderProfileId === profile?.profileId || (m.senderUid === user!.uid && !m.senderProfileId)) {
+          // Current profile or user account (backward compatibility)
           role = 'user';
           content = `[Me]: ${content}`;
         } else {
+          // Partner profile
           role = 'user';
           content = `[Partner]: ${content}`;
         }
@@ -3278,11 +3282,13 @@ function MainApp() {
                     )}>
                       {m.senderUid === 'ai_coach' 
                         ? t('chat.coachTitle', { persona: t(`sessions.personas.${getCoach(activeSession!.coachPersona).id}.name`) }) 
-                        : m.senderUid === user.uid && m.senderProfileId === profile?.profileId
+                        : m.senderProfileId === profile?.profileId
                           ? (decryptedProfile.name || t('chat.you')) 
-                          : m.senderUid === user.uid && m.senderProfileId === profile?.partnerId
+                          : m.senderProfileId === profile?.partnerId
                             ? (decryptedProfile.partnerName || t('chat.partner'))
-                            : t('chat.unknown')}
+                            : m.senderUid === user.uid
+                              ? (decryptedProfile.name || t('chat.you'))
+                              : (decryptedProfile.partnerName || t('chat.partner'))}
                     </span>
                   </div>
                 ))}
