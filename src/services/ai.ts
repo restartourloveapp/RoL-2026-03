@@ -132,7 +132,13 @@ export async function generateCoachResponse(
   if (!responseText) return null;
   
   try {
-    return JSON.parse(responseText);
+    const parsed = JSON.parse(responseText);
+    console.log('DEBUG: AI Response Parsed', {
+      nextSpeaker: parsed.nextSpeaker,
+      textLength: parsed.text?.length,
+      fullResponse: parsed
+    });
+    return parsed;
   } catch (e) {
     console.error("Failed to parse AI response as JSON", e, responseText);
     return { text: responseText, nextSpeaker: 'none' };

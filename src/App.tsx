@@ -1699,11 +1699,22 @@ function MainApp() {
         });
 
         // Auto-select next speaker in couple sessions
+        console.log('DEBUG: AI Result', {
+          nextSpeaker: aiResult.nextSpeaker,
+          sessionType: activeSession.type,
+          ownerUid: activeSession.ownerUid,
+          userUid: user!.uid,
+          partnerUid: activeSession.partnerUid
+        });
+        
         if (activeSession.type === 'couple' && aiResult.nextSpeaker) {
+          console.log('DEBUG: Condition met, setting nextSpeaker:', aiResult.nextSpeaker);
           if (aiResult.nextSpeaker === 'user') {
+            console.log('DEBUG: Setting speaker to user:', user!.uid);
             setSelectedSpeakerUid(user!.uid);
           } else if (aiResult.nextSpeaker === 'partner') {
             const partnerUid = activeSession.ownerUid === user!.uid ? activeSession.partnerUid : activeSession.ownerUid;
+            console.log('DEBUG: Setting speaker to partner:', partnerUid);
             if (partnerUid) setSelectedSpeakerUid(partnerUid);
           }
         }
