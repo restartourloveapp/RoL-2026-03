@@ -3268,24 +3268,35 @@ function MainApp() {
                         </ReactMarkdown>
                       </div>
                     </div>
-                    <span className={cn(
-                      "text-[9px] mt-1 font-bold uppercase tracking-wider",
-                      m.senderUid === 'ai_coach' 
-                        ? "text-emerald-600" 
-                        : m.senderUid === user.uid 
-                          ? "text-stone-400" 
-                          : "text-stone-500"
-                    )}>
-                      {m.senderUid === 'ai_coach' 
-                        ? t('chat.coachTitle', { persona: t(`sessions.personas.${getCoach(activeSession!.coachPersona).id}.name`) }) 
-                        : m.senderProfileId === profile?.profileId
-                          ? (decryptedProfile.name || t('chat.you')) 
-                          : m.senderProfileId === profile?.partnerId
-                            ? (decryptedProfile.partnerName || t('chat.partner'))
-                            : m.senderUid === user.uid
-                              ? (decryptedProfile.name || t('chat.you'))
-                              : (decryptedProfile.partnerName || t('chat.partner'))}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      {m.senderUid === 'ai_coach' && (
+                        <div className="w-5 h-5 rounded-lg overflow-hidden border border-emerald-200 flex-shrink-0">
+                          <img 
+                            src={getCoach(activeSession!.coachPersona).avatarSmall} 
+                            alt={getCoach(activeSession!.coachPersona).id}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                      <span className={cn(
+                        "text-[9px] font-bold uppercase tracking-wider",
+                        m.senderUid === 'ai_coach' 
+                          ? "text-emerald-600" 
+                          : m.senderUid === user.uid 
+                            ? "text-stone-400" 
+                            : "text-stone-500"
+                      )}>
+                        {m.senderUid === 'ai_coach' 
+                          ? t('chat.coachTitle', { persona: t(`sessions.personas.${getCoach(activeSession!.coachPersona).id}.name`) }) 
+                          : m.senderProfileId === profile?.profileId
+                            ? (decryptedProfile.name || t('chat.you')) 
+                            : m.senderProfileId === profile?.partnerId
+                              ? (decryptedProfile.partnerName || t('chat.partner'))
+                              : m.senderUid === user.uid
+                                ? (decryptedProfile.name || t('chat.you'))
+                                : (decryptedProfile.partnerName || t('chat.partner'))}
+                      </span>
+                    </div>
                   </div>
                 ))}
                 {isAiLoading && (
