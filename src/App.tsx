@@ -322,6 +322,7 @@ function MainApp() {
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
   const [activeSSK, setActiveSSK] = useState<CryptoKey | null>(null);
   const [view, setView] = useState<'sessions' | 'settings' | 'timeline' | 'safety' | 'admin'>('sessions');
+  const [timelineTab, setTimelineTab] = useState<'couple' | 'personal'>('couple');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [isCrisisDetected, setIsCrisisDetected] = useState(false);
@@ -2260,202 +2261,262 @@ function MainApp() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="h-full flex flex-col p-6 space-y-8 overflow-y-auto"
+              className="h-full flex flex-col p-6 space-y-6 overflow-y-auto"
             >
               <header>
                 <h1 className="font-serif font-bold text-3xl text-stone-900">{t('journey.title')}</h1>
                 <p className="text-stone-500">{t('journey.subtitle')}</p>
               </header>
 
-              <div className="space-y-6">
-                <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-                  <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
-                    <BookOpen className="w-4 h-4" />
-                    {t('journey.homeworkTitle')}
-                  </h2>
-                  {homework.filter(h => h.status === 'assigned').length === 0 ? (
-                    <p className="text-sm text-stone-400 italic">{t('journey.noHomework')}</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {homework.filter(h => h.status === 'assigned').map(h => (
-                        <div key={h.id} className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-emerald-900 text-sm">{h.decryptedTitle || 'Encrypted Task'}</h3>
-                            <button 
-                              onClick={async () => {
-                                await updateDoc(doc(db, 'homework', h.id), { status: 'completed' });
-                              }}
-                              className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-lg"
-                            >
-                              {t('common.done')}
-                            </button>
-                          </div>
-                          <p className="text-xs text-emerald-700 leading-relaxed">{h.decryptedDescription || 'Decrypting...'}</p>
-                          {h.dueDate && (
-                            <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold uppercase">
-                              <Calendar className="w-3 h-3" />
-                              {t('common.due')}: {new Date(h.dueDate.seconds * 1000).toLocaleDateString()}
-                            </div>
-                          )}
+              {/* Homework Section */}
+              <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
+                <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
+                  <BookOpen className="w-4 h-4" />
+                  {t('journey.homeworkTitle')}
+                </h2>
+                {homework.filter(h => h.status === 'assigned').length === 0 ? (
+                  <p className="text-sm text-stone-400 italic">{t('journey.noHomework')}</p>
+                ) : (
+                  <div className="space-y-3">
+                    {homework.filter(h => h.status === 'assigned').map(h => (
+                      <div key={h.id} className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-bold text-emerald-900 text-sm">{h.decryptedTitle || 'Encrypted Task'}</h3>
+                          <button 
+                            onClick={async () => {
+                              await updateDoc(doc(db, 'homework', h.id), { status: 'completed' });
+                            }}
+                            className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-lg"
+                          >
+                            {t('common.done')}
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        <p className="text-xs text-emerald-700 leading-relaxed">{h.decryptedDescription || 'Decrypting...'}</p>
+                        {h.dueDate && (
+                          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold uppercase">
+                            <Calendar className="w-3 h-3" />
+                            {t('common.due')}: {new Date(h.dueDate.seconds * 1000).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                {/* Couple Sessions Section */}
-                {sessions.filter(s => s.type === 'couple').length > 0 && (
-                  <div className="space-y-4">
-                    <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      {t('sessions.coupleSession')}
-                    </h2>
-                    <div className="space-y-3">
+              {/* Timeline Tabs */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTimelineTab('couple')}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-sm font-bold transition-all border",
+                    timelineTab === 'couple'
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-stone-600 border-stone-200 hover:border-stone-400"
+                  )}
+                >
+                  👥 {t('sessions.coupleSession')}
+                </button>
+                <button
+                  onClick={() => setTimelineTab('personal')}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-sm font-bold transition-all border",
+                    timelineTab === 'personal'
+                      ? "bg-purple-600 text-white border-purple-600"
+                      : "bg-white text-stone-600 border-stone-200 hover:border-stone-400"
+                  )}
+                >
+                  💬 {t('sessions.personalSession')}
+                </button>
+              </div>
+
+              {/* Couple Sessions Timeline */}
+              {timelineTab === 'couple' && (
+                <div className="space-y-4">
+                  {sessions.filter(s => s.type === 'couple').length === 0 ? (
+                    <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-stone-200">
+                      <Users className="w-8 h-8 text-stone-200 mx-auto mb-2" />
+                      <p className="text-sm text-stone-400">{t('journey.noSessions')}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
                       {sessions.filter(s => s.type === 'couple').sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(session => {
                         const coachInfo = getCoach(session.coachPersona);
                         const sessionDate = new Date(session.createdAt?.seconds * 1000);
                         const ownerName = decryptedProfile?.name || t('chat.you');
                         const partnerName = decryptedProfile?.partnerName || t('chat.partner');
+                        const sessionTimeline = timeline.filter(t => t.sessionId === session.id);
                         
                         return (
-                          <div key={session.id} className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm space-y-3 hover:shadow-md transition-shadow">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1 space-y-2">
-                                <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-                                  <Users className="w-4 h-4 text-blue-500" />
-                                  {ownerName} <span className="text-stone-400">& </span> {partnerName}
+                          <div key={session.id} className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
+                            {/* Session Info */}
+                            <div className="space-y-3 pb-4 border-b border-stone-100">
+                              <div className="flex items-center justify-between">
+                                <h3 className="font-bold text-stone-900 text-lg flex items-center gap-2">
+                                  <Users className="w-5 h-5 text-blue-500" />
+                                  {ownerName} & {partnerName}
                                 </h3>
-                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <span className="font-bold text-stone-700">Coach:</span>
-                                    <span>{t(`sessions.personas.${coachInfo.id}.name`)}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <Calendar className="w-3 h-3" />
-                                    <span>{sessionDate.toLocaleDateString()}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <MessageCircle className="w-3 h-3" />
-                                    <span>{session.messageCount} {t('sessions.messages')}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <Clock className="w-3 h-3" />
-                                    <span>{sessionDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
-                                  </div>
+                                <span className={cn(
+                                  "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full",
+                                  session.status === 'active' ? "bg-blue-100 text-blue-700" :
+                                  session.status === 'archived' ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-700"
+                                )}>
+                                  {t(`sessions.status.${session.status}`)}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-2 text-xs">
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <span className="font-bold text-stone-700">Coach:</span>
+                                  <span>{t(`sessions.personas.${coachInfo.id}.name`)}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>{sessionDate.toLocaleDateString()}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{sessionDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <MessageCircle className="w-3 h-3" />
+                                  <span>{session.messageCount} {t('sessions.messages')}</span>
                                 </div>
                               </div>
-                              <span className={cn(
-                                "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap",
-                                session.status === 'active' ? "bg-blue-100 text-blue-700" :
-                                session.status === 'archived' ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-700"
-                              )}>
-                                {t(`sessions.status.${session.status}`)}
-                              </span>
                             </div>
+
+                            {/* Session Timeline Entries */}
+                            {sessionTimeline.length === 0 ? (
+                              <p className="text-xs text-stone-400 italic py-2">{t('journey.noTimeline')}</p>
+                            ) : (
+                              <div className="space-y-2">
+                                <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest">Mijlpalen & Inzichten</h4>
+                                <div className="relative pl-4 space-y-3 before:absolute before:left-0.5 before:top-0 before:bottom-0 before:w-0.5 before:bg-stone-100">
+                                  {sessionTimeline.map((entry) => (
+                                    <div key={entry.id} className="relative">
+                                      <div className={cn(
+                                        "absolute -left-2 top-1 w-3 h-3 rounded-full border-2 border-white shadow-sm",
+                                        entry.type === 'milestone' ? "bg-emerald-500" : 
+                                        entry.type === 'insight' ? "bg-amber-500" : "bg-indigo-500"
+                                      )} />
+                                      <div className="pl-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className={cn(
+                                            "text-[7px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded",
+                                            entry.type === 'milestone' ? "bg-emerald-100 text-emerald-700" : 
+                                            entry.type === 'insight' ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700"
+                                          )}>
+                                            {t(`timeline.${entry.type}`)}
+                                          </span>
+                                        </div>
+                                        <h5 className="font-bold text-stone-900 text-xs">{entry.decryptedTitle || t('timeline.encryptedEntry')}</h5>
+                                        <p className="text-xs text-stone-500 leading-relaxed">{entry.decryptedDescription || t('timeline.decrypting')}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
 
-                {/* Personal Sessions Section */}
-                {sessions.filter(s => s.type === 'personal').length > 0 && (
-                  <div className="space-y-4">
-                    <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
-                      <MessageCircle className="w-4 h-4" />
-                      {t('sessions.personalSession')}
-                    </h2>
-                    <div className="space-y-3">
+              {/* Personal Sessions Timeline */}
+              {timelineTab === 'personal' && (
+                <div className="space-y-4">
+                  {sessions.filter(s => s.type === 'personal').length === 0 ? (
+                    <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-stone-200">
+                      <MessageCircle className="w-8 h-8 text-stone-200 mx-auto mb-2" />
+                      <p className="text-sm text-stone-400">{t('journey.noSessions')}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
                       {sessions.filter(s => s.type === 'personal').sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(session => {
                         const coachInfo = getCoach(session.coachPersona);
                         const sessionDate = new Date(session.createdAt?.seconds * 1000);
                         const isOwner = session.ownerUid === user?.uid;
                         const personName = isOwner ? (decryptedProfile?.name || t('chat.you')) : (decryptedProfile?.partnerName || t('chat.partner'));
+                        const sessionTimeline = timeline.filter(t => t.sessionId === session.id);
                         
                         return (
-                          <div key={session.id} className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm space-y-3 hover:shadow-md transition-shadow">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1 space-y-2">
-                                <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-                                  <MessageCircle className="w-4 h-4 text-purple-500" />
+                          <div key={session.id} className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
+                            {/* Session Info */}
+                            <div className="space-y-3 pb-4 border-b border-stone-100">
+                              <div className="flex items-center justify-between">
+                                <h3 className="font-bold text-stone-900 text-lg flex items-center gap-2">
+                                  <MessageCircle className="w-5 h-5 text-purple-500" />
                                   {personName}
                                 </h3>
-                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <span className="font-bold text-stone-700">Coach:</span>
-                                    <span>{t(`sessions.personas.${coachInfo.id}.name`)}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <Calendar className="w-3 h-3" />
-                                    <span>{sessionDate.toLocaleDateString()}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <MessageCircle className="w-3 h-3" />
-                                    <span>{session.messageCount} {t('sessions.messages')}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-stone-600">
-                                    <Clock className="w-3 h-3" />
-                                    <span>{sessionDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
-                                  </div>
+                                <span className={cn(
+                                  "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full",
+                                  session.status === 'active' ? "bg-purple-100 text-purple-700" :
+                                  session.status === 'archived' ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-700"
+                                )}>
+                                  {t(`sessions.status.${session.status}`)}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-2 text-xs">
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <span className="font-bold text-stone-700">Coach:</span>
+                                  <span>{t(`sessions.personas.${coachInfo.id}.name`)}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>{sessionDate.toLocaleDateString()}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{sessionDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-stone-600">
+                                  <MessageCircle className="w-3 h-3" />
+                                  <span>{session.messageCount} {t('sessions.messages')}</span>
                                 </div>
                               </div>
-                              <span className={cn(
-                                "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap",
-                                session.status === 'active' ? "bg-purple-100 text-purple-700" :
-                                session.status === 'archived' ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-700"
-                              )}>
-                                {t(`sessions.status.${session.status}`)}
-                              </span>
                             </div>
+
+                            {/* Session Timeline Entries */}
+                            {sessionTimeline.length === 0 ? (
+                              <p className="text-xs text-stone-400 italic py-2">{t('journey.noTimeline')}</p>
+                            ) : (
+                              <div className="space-y-2">
+                                <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest">Mijlpalen & Inzichten</h4>
+                                <div className="relative pl-4 space-y-3 before:absolute before:left-0.5 before:top-0 before:bottom-0 before:w-0.5 before:bg-stone-100">
+                                  {sessionTimeline.map((entry) => (
+                                    <div key={entry.id} className="relative">
+                                      <div className={cn(
+                                        "absolute -left-2 top-1 w-3 h-3 rounded-full border-2 border-white shadow-sm",
+                                        entry.type === 'milestone' ? "bg-emerald-500" : 
+                                        entry.type === 'insight' ? "bg-amber-500" : "bg-indigo-500"
+                                      )} />
+                                      <div className="pl-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className={cn(
+                                            "text-[7px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded",
+                                            entry.type === 'milestone' ? "bg-emerald-100 text-emerald-700" : 
+                                            entry.type === 'insight' ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700"
+                                          )}>
+                                            {t(`timeline.${entry.type}`)}
+                                          </span>
+                                        </div>
+                                        <h5 className="font-bold text-stone-900 text-xs">{entry.decryptedTitle || t('timeline.encryptedEntry')}</h5>
+                                        <p className="text-xs text-stone-500 leading-relaxed">{entry.decryptedDescription || t('timeline.decrypting')}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                )}
-
-                <div className="space-y-4">
-                  <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
-                    <History className="w-4 h-4" />
-                    {t('journey.timelineTitle')}
-                  </h2>
-                  {timeline.length === 0 ? (
-                    <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-stone-200">
-                      <Sparkles className="w-8 h-8 text-stone-200 mx-auto mb-2" />
-                      <p className="text-sm text-stone-400">{t('journey.noTimeline')}</p>
-                    </div>
-                  ) : (
-                    <div className="relative pl-6 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-stone-100">
-                      {timeline.map((entry) => (
-                        <div key={entry.id} className="relative">
-                          <div className={cn(
-                            "absolute -left-[23px] top-1 w-4 h-4 rounded-full border-4 border-white shadow-sm",
-                            entry.type === 'milestone' ? "bg-emerald-500" : 
-                            entry.type === 'insight' ? "bg-amber-500" : "bg-indigo-500"
-                          )} />
-                          <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className={cn(
-                                "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full",
-                                entry.type === 'milestone' ? "bg-emerald-100 text-emerald-700" : 
-                                entry.type === 'insight' ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700"
-                              )}>
-                                {t(`timeline.${entry.type}`)}
-                              </span>
-                              <span className="text-[10px] text-stone-400 font-medium">
-                                {new Date(entry.createdAt.seconds * 1000).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <h3 className="font-bold text-stone-900 text-sm">{entry.decryptedTitle || t('timeline.encryptedEntry')}</h3>
-                            <p className="text-xs text-stone-500 leading-relaxed">{entry.decryptedDescription || t('timeline.decrypting')}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   )}
                 </div>
-              </div>
+              )}
             </motion.div>
           )}
 
