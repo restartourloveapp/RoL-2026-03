@@ -76,7 +76,7 @@ import * as Encryption from './services/encryption';
 import * as AI from './services/ai';
 import { AI_CONFIG } from './config/aiConfig';
 import { Language, translations } from './services/i18n';
-import { coaches, getCoachesList, getCoach } from './config/coachData';
+import { coaches, getCoachesList, getCoach, LOGO_IMAGES } from './config/coachData';
 
 // --- Types ---
 interface UserProfile {
@@ -2068,14 +2068,10 @@ function MainApp() {
                   >
                     <div className="flex items-center gap-4">
                       <div className={cn(
-                        "w-14 h-14 rounded-2xl flex items-center justify-center shrink-0",
-                        `bg-${coach.color}/10 text-${coach.color}`
+                        "w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden border border-stone-100",
+                        `bg-${coach.color}/10`
                       )}>
-                        {coach.id === 'solin' && <Heart className="w-8 h-8" />}
-                        {coach.id === 'kael' && <Zap className="w-8 h-8" />}
-                        {coach.id === 'ravian' && <Search className="w-8 h-8" />}
-                        {coach.id === 'amari' && <ShieldCheck className="w-8 h-8" />}
-                        {coach.id === 'leora' && <Trees className="w-8 h-8" />}
+                        <img src={coach.avatarSmall} alt={coach.id} className="w-full h-full object-cover" />
                       </div>
                       <div>
                         <h3 className="font-bold text-lg">{t(`sessions.personas.${coach.id}.name`)}</h3>
@@ -2152,7 +2148,7 @@ function MainApp() {
             >
               <header className="p-6 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Heart className="w-6 h-6 text-emerald-600 fill-emerald-600" />
+                  <img src={LOGO_IMAGES.main_v1} alt="Restart Our Love" className="w-6 h-6" />
                   <h1 className="font-serif font-bold text-2xl">Restart</h1>
                 </div>
                 <button 
@@ -3589,10 +3585,10 @@ function MainApp() {
                         <div className="flex gap-4 items-start">
                           {coach && (
                             <div className={cn(
-                              "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-                              `bg-${coach.color}/20 text-${coach.color}`
+                              "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden border border-stone-100",
+                              `bg-${coach.color}/20`
                             )}>
-                              <CoachIcon name={coach.icon} className="w-6 h-6" />
+                              <img src={coach.avatarSmall} alt={coach.id} className="w-full h-full object-cover" />
                             </div>
                           )}
                           <div className="flex-1">
