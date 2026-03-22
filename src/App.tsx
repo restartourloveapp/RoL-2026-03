@@ -1706,13 +1706,12 @@ function MainApp() {
             console.log('DEBUG: Setting speaker to user:', user!.uid);
             setSelectedSpeakerUid(user!.uid);
           } else if (aiResult.nextSpeaker === 'partner') {
-            // Determine partner UID: 
-            // If user is owner, partner is in profile; otherwise user IS the partner
+            // Determine partner UID from activeSession (stored when session was created)
             let partnerUid: string | undefined;
             if (activeSession.ownerUid === user!.uid) {
-              // User is owner -> partner is from profile
-              partnerUid = profile?.partnerUid;
-              console.log('DEBUG: User is owner, partner UID from profile:', partnerUid);
+              // User is owner -> partner UID is stored in session.partnerUid
+              partnerUid = activeSession.partnerUid;
+              console.log('DEBUG: User is owner, partner UID from session:', partnerUid);
             } else {
               // User is NOT owner -> they are the partner, owner is the other speaker
               partnerUid = activeSession.ownerUid;
@@ -1723,7 +1722,7 @@ function MainApp() {
               console.log('DEBUG: Setting speaker to partner:', partnerUid);
               setSelectedSpeakerUid(partnerUid);
             } else {
-              console.warn('DEBUG: Could not determine partner UID - profile.partnerUid might not be loaded yet');
+              console.warn('DEBUG: Could not determine partner UID - no partnerUid in session');
             }
           }
         }
