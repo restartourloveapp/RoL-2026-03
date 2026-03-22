@@ -2149,7 +2149,7 @@ function MainApp() {
               <header className="p-6 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-3">
                   <img src={LOGO_IMAGES.main_v1} alt="Restart Our Love" className="w-10 h-10" />
-                  <h1 style={{ fontFamily: "Lobster, cursive" }} className="font-bold text-3xl">Restart our Love</h1>
+                  <h1 className="font-lobster font-bold text-3xl">Restart our Love</h1>
                 </div>
                 <button 
                   onClick={() => setShowNewSessionModal(true)}
