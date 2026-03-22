@@ -38,6 +38,7 @@ jobs:
         env:
           VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_PROD }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_PROD }}
 
       - name: Deploy to Firebase Hosting (Production)
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -78,6 +79,7 @@ jobs:
         env:
           VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_PROD }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_PROD }}
 
       - name: Sync Capacitor
         run: |
@@ -134,6 +136,7 @@ jobs:
         env:
           VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_PROD }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_PROD }}
 
       - name: Sync Capacitor
         run: |

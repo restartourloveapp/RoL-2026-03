@@ -63,6 +63,7 @@ jobs:
         env:
           VITE_STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY_TEST }}
           VITE_FIREBASE_PROJECT_ID: ${{ steps.config_step.outputs.PROJECT_ID }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_TEST }}
 
       - name: Deploy to Firebase Hosting (Test)
         uses: FirebaseExtended/action-hosting-deploy@v0

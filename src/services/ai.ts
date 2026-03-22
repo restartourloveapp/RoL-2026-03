@@ -1,7 +1,8 @@
 import { COACH_SYSTEM_PROMPTS } from "../config/prompts";
 import { AI_CONFIG } from "../config/aiConfig";
-import { vertexAI } from "../firebase";
-import { getGenerativeModel, Content } from "@firebase/vertexai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY); // From environment variables (GitHub Secrets or .env)
 
 export type CoachPersona = 'solin' | 'kael' | 'ravian' | 'amari' | 'leora';
 export type CoachGender = 'male' | 'female';
@@ -103,12 +104,12 @@ export async function generateCoachResponse(
   - "both" if you are addressing both.
   - "none" if no specific person is addressed.`;
 
-  const vertexModel = getGenerativeModel(vertexAI, {
+  const model = genAI.getGenerativeModel({
     model: AI_CONFIG.MODEL_NAME,
     systemInstruction,
   });
 
-  const contents: Content[] = [
+  const contents = [
     ...history.map(h => ({
       role: h.role as "user" | "model",
       parts: [{ text: h.content }]
@@ -119,7 +120,7 @@ export async function generateCoachResponse(
     }
   ];
 
-  const result = await vertexModel.generateContent({
+  const result = await model.generateContent({
     contents,
     generationConfig: {
       temperature: AI_CONFIG.DEFAULT_TEMPERATURE,
@@ -151,12 +152,12 @@ export async function generateResponseTip(
   Focus on empathy and connection. Keep it under 50 words.
   IMPORTANT: You MUST respond in the following language: ${language === 'nl' ? 'Dutch (Nederlands)' : 'English'}.`;
 
-  const tipModel = getGenerativeModel(vertexAI, {
+  const tipModel = genAI.getGenerativeModel({
     model: AI_CONFIG.MODEL_NAME,
     systemInstruction,
   });
 
-  const contents: Content[] = [
+  const contents = [
     ...history.map(h => ({
       role: h.role as "user" | "model",
       parts: [{ text: h.content }]
@@ -216,12 +217,12 @@ export async function generateSummary(
   Keep it structured, encouraging, and deeply professional.
   IMPORTANT: All text fields in the JSON response (summary, title, description) MUST be in the following language: ${language === 'nl' ? 'Dutch (Nederlands)' : 'English'}.`;
 
-  const summaryModel = getGenerativeModel(vertexAI, {
+  const summaryModel = genAI.getGenerativeModel({
     model: AI_CONFIG.MODEL_NAME,
     systemInstruction,
   });
 
-  const contents: Content[] = [
+  const contents = [
     ...history.map(h => ({
       role: h.role as "user" | "model",
       parts: [{ text: h.content }]
@@ -260,7 +261,7 @@ export async function generateMessageSummary(
   This summary will be used as context for future messages.
   Language: ${language === 'nl' ? 'Dutch' : 'English'}`;
 
-  const msgModel = getGenerativeModel(vertexAI, {
+  const msgModel = genAI.getGenerativeModel({
     model: AI_CONFIG.MODEL_NAME,
     systemInstruction,
   });
@@ -284,7 +285,7 @@ export async function generateMetaSummary(
   Keep it concise but deeply insightful.
   Language: ${language === 'nl' ? 'Dutch' : 'English'}`;
 
-  const metaModel = getGenerativeModel(vertexAI, {
+  const metaModel = genAI.getGenerativeModel({
     model: AI_CONFIG.MODEL_NAME,
     systemInstruction,
   });
