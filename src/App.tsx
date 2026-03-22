@@ -66,7 +66,8 @@ import {
   Trees,
   Save,
   Edit3,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -2290,6 +2291,118 @@ function MainApp() {
                     </div>
                   )}
                 </div>
+
+                {/* Couple Sessions Section */}
+                {sessions.filter(s => s.type === 'couple').length > 0 && (
+                  <div className="space-y-4">
+                    <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      {t('sessions.coupleSession')}
+                    </h2>
+                    <div className="space-y-3">
+                      {sessions.filter(s => s.type === 'couple').sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(session => {
+                        const coachInfo = getCoach(session.coachPersona);
+                        const sessionDate = new Date(session.createdAt?.seconds * 1000);
+                        const ownerName = decryptedProfile?.name || t('chat.you');
+                        const partnerName = decryptedProfile?.partnerName || t('chat.partner');
+                        
+                        return (
+                          <div key={session.id} className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm space-y-3 hover:shadow-md transition-shadow">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 space-y-2">
+                                <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                                  <Users className="w-4 h-4 text-blue-500" />
+                                  {ownerName} <span className="text-stone-400">& </span> {partnerName}
+                                </h3>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <span className="font-bold text-stone-700">Coach:</span>
+                                    <span>{t(`sessions.personas.${coachInfo.id}.name`)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <Calendar className="w-3 h-3" />
+                                    <span>{sessionDate.toLocaleDateString()}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <MessageCircle className="w-3 h-3" />
+                                    <span>{session.messageCount} {t('sessions.messages')}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <Clock className="w-3 h-3" />
+                                    <span>{sessionDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <span className={cn(
+                                "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap",
+                                session.status === 'active' ? "bg-blue-100 text-blue-700" :
+                                session.status === 'archived' ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-700"
+                              )}>
+                                {t(`sessions.status.${session.status}`)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Personal Sessions Section */}
+                {sessions.filter(s => s.type === 'personal').length > 0 && (
+                  <div className="space-y-4">
+                    <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
+                      <MessageCircle className="w-4 h-4" />
+                      {t('sessions.personalSession')}
+                    </h2>
+                    <div className="space-y-3">
+                      {sessions.filter(s => s.type === 'personal').sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map(session => {
+                        const coachInfo = getCoach(session.coachPersona);
+                        const sessionDate = new Date(session.createdAt?.seconds * 1000);
+                        const isOwner = session.ownerUid === user?.uid;
+                        const personName = isOwner ? (decryptedProfile?.name || t('chat.you')) : (decryptedProfile?.partnerName || t('chat.partner'));
+                        
+                        return (
+                          <div key={session.id} className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm space-y-3 hover:shadow-md transition-shadow">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 space-y-2">
+                                <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                                  <MessageCircle className="w-4 h-4 text-purple-500" />
+                                  {personName}
+                                </h3>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <span className="font-bold text-stone-700">Coach:</span>
+                                    <span>{t(`sessions.personas.${coachInfo.id}.name`)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <Calendar className="w-3 h-3" />
+                                    <span>{sessionDate.toLocaleDateString()}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <MessageCircle className="w-3 h-3" />
+                                    <span>{session.messageCount} {t('sessions.messages')}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-stone-600">
+                                    <Clock className="w-3 h-3" />
+                                    <span>{sessionDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <span className={cn(
+                                "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap",
+                                session.status === 'active' ? "bg-purple-100 text-purple-700" :
+                                session.status === 'archived' ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-700"
+                              )}>
+                                {t(`sessions.status.${session.status}`)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-4">
                   <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
