@@ -382,8 +382,8 @@ function MainApp() {
     persona: AI.CoachPersona;
     gender: AI.CoachGender;
   }>({
-    type: 'personal',
-    persona: 'solin',
+    type: 'couple',
+    persona: profile?.defaultCoupleCoach || 'solin',
     gender: 'female'
   });
 
@@ -3488,17 +3488,7 @@ function MainApp() {
                   <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t('sessions.sessionType')}</label>
                   <div className="grid grid-cols-2 gap-3">
                     <button 
-                      onClick={() => setNewSessionConfig(prev => ({ ...prev, type: 'personal', persona: personalCoachInput }))}
-                      className={cn(
-                        "p-4 rounded-2xl border-2 transition-all text-left",
-                        newSessionConfig.type === 'personal' ? "border-emerald-500 bg-emerald-50" : "border-stone-100"
-                      )}
-                    >
-                      <UserIcon className="w-5 h-5 mb-1 text-stone-900" />
-                      <p className="font-bold text-sm">{t('sessions.personal')}</p>
-                    </button>
-                    <button 
-                      onClick={() => setNewSessionConfig(prev => ({ ...prev, type: 'couple', persona: defaultCoachInput }))}
+                      onClick={() => setNewSessionConfig(prev => ({ ...prev, type: 'couple', persona: profile?.defaultCoupleCoach || defaultCoachInput }))}
                       className={cn(
                         "p-4 rounded-2xl border-2 transition-all text-left",
                         newSessionConfig.type === 'couple' ? "border-emerald-500 bg-emerald-50" : "border-stone-100"
@@ -3507,54 +3497,61 @@ function MainApp() {
                       <Users className="w-5 h-5 mb-1 text-stone-900" />
                       <p className="font-bold text-sm">{t('sessions.couple')}</p>
                     </button>
+                    <button 
+                      onClick={() => setNewSessionConfig(prev => ({ ...prev, type: 'personal', persona: profile?.personalCoach || personalCoachInput }))}
+                      className={cn(
+                        "p-4 rounded-2xl border-2 transition-all text-left",
+                        newSessionConfig.type === 'personal' ? "border-emerald-500 bg-emerald-50" : "border-stone-100"
+                      )}
+                    >
+                      <UserIcon className="w-5 h-5 mb-1 text-stone-900" />
+                      <p className="font-bold text-sm">{t('sessions.personal')}</p>
+                    </button>
                   </div>
                 </div>
 
+
                 <div className="space-y-3">
                   <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t('sessions.coachPersona')}</label>
-                  <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                    {getCoachesList().map(coach => {
-                      const isSelected = newSessionConfig.persona === coach.id;
-                      const personaData = t(`sessions.personas.${coach.id}`);
+                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 space-y-3">
+                    {(() => {
+                      const selectedCoachId = newSessionConfig.type === 'couple' 
+                        ? (profile?.defaultCoupleCoach || defaultCoachInput) 
+                        : (profile?.personalCoach || personalCoachInput);
+                      const coach = getCoachesList().find(c => c.id === selectedCoachId);
+                      const personaData = coach ? t(`sessions.personas.${coach.id}`) : { name: '...', title: '...', description: '...' };
+                      
                       return (
-                        <button 
-                          key={coach.id}
-                          onClick={() => setNewSessionConfig(prev => ({ ...prev, persona: coach.id as AI.CoachPersona }))}
-                          className={cn(
-                            "p-4 rounded-2xl border-2 transition-all text-left flex gap-4 items-start",
-                            isSelected ? "border-emerald-500 bg-emerald-50" : "border-stone-100 hover:border-stone-200"
-                          )}
-                        >
-                          <div className={cn(
-                            "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-                            isSelected ? `bg-${coach.color}/20 text-${coach.color}` : "bg-stone-100 text-stone-400"
-                          )}>
-                            <CoachIcon name={coach.icon} className="w-6 h-6" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex justify-between items-center mb-1">
-                              <p className="font-bold text-sm text-stone-900">{personaData.name}</p>
-                              <span className={cn(
-                                "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter",
-                                isSelected ? `bg-${coach.color}/10 text-${coach.color}` : "bg-stone-100 text-stone-500"
-                              )}>
-                                {personaData.title}
-                              </span>
+                        <div className="flex gap-4 items-start">
+                          {coach && (
+                            <div className={cn(
+                              "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
+                              `bg-${coach.color}/20 text-${coach.color}`
+                            )}>
+                              <CoachIcon name={coach.icon} className="w-6 h-6" />
                             </div>
-                            <p className="text-xs text-stone-500 leading-relaxed">
+                          )}
+                          <div className="flex-1">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div>
+                                <p className="font-bold text-sm text-stone-900">{personaData.name}</p>
+                                <p className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-tighter bg-white text-stone-600 inline-block mt-1">
+                                  {personaData.title}
+                                </p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-stone-600 leading-relaxed">
                               {personaData.description}
                             </p>
-                            <div className="flex gap-1 mt-2">
-                              {coach.traits.map(trait => (
-                                <span key={trait} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-white border border-stone-100 text-stone-400 uppercase">
-                                  {trait}
-                                </span>
-                              ))}
-                            </div>
                           </div>
-                        </button>
+                        </div>
                       );
-                    })}
+                    })()}
+                    <div className="pt-2 border-t border-emerald-100">
+                      <p className="text-[10px] text-stone-500 italic">
+                        💡 {t('sessions.coachCanBeChangedInSettings')}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
