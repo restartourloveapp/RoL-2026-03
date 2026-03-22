@@ -260,7 +260,7 @@ export const translations = {
       you: "Jij",
       partner: "Partner",
       unknown: "Onbekend",
-      coachTitle: "{{persona}} Coach"
+      coachTitle: "{{persona}}"
     }
   },
   en: {
@@ -522,7 +522,7 @@ export const translations = {
       you: "You",
       partner: "Partner",
       unknown: "Unknown",
-      coachTitle: "{{persona}} Coach"
+      coachTitle: "{{persona}}"
     }
   }
 };
