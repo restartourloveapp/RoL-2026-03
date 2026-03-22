@@ -3038,7 +3038,9 @@ function MainApp() {
                         ? t('chat.coachTitle', { persona: t(`sessions.personas.${getCoach(activeSession!.coachPersona).id}.name`) }) 
                         : m.senderUid === user.uid 
                           ? (decryptedProfile.name || t('chat.you')) 
-                          : (decryptedProfile.partnerName || t('chat.partner'))}
+                          : m.senderUid === activeSession?.partnerUid
+                            ? (decryptedProfile.partnerName || t('chat.partner'))
+                            : t('chat.unknown')}
                     </span>
                   </div>
                 ))}

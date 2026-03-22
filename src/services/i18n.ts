@@ -249,6 +249,7 @@ export const translations = {
       coach: "Coach",
       you: "Jij",
       partner: "Partner",
+      unknown: "Onbekend",
       coachTitle: "{{persona}} Coach"
     }
   },
@@ -500,6 +501,7 @@ export const translations = {
       coach: "Coach",
       you: "You",
       partner: "Partner",
+      unknown: "Unknown",
       coachTitle: "{{persona}} Coach"
     }
   }
