@@ -136,6 +136,8 @@ export const translations = {
       closedSessionNotice: "Dit gesprek is beëindigd en kan alleen worden gelezen.",
       noSummary: "Geen samenvatting beschikbaar voor deze sessie.",
       viewAll: "Bekijk alle sessies in Journey",
+      deleteConfirmTitle: "Sessie Verwijderen?",
+      deleteConfirmMessage: "Deze actie kan niet ongedaan gemaakt worden. Alle berichten en gegevens van deze sessie worden permanent verwijderd.",
       alerts: {
         sessionDeleted: "Sessie succesvol verwijderd.",
         sessionError: "Fout bij het verwijderen van de sessie.",
@@ -395,6 +397,8 @@ export const translations = {
       closedSessionNotice: "This conversation is finished and can only be read.",
       noSummary: "No summary available for this session.",
       viewAll: "View all sessions in Journey",
+      deleteConfirmTitle: "Delete Session?",
+      deleteConfirmMessage: "This action cannot be undone. All messages and data from this session will be permanently deleted.",
       alerts: {
         sessionDeleted: "Session successfully deleted.",
         sessionError: "Error deleting session.",

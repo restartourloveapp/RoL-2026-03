@@ -1186,23 +1186,32 @@ function MainApp() {
       const session = sessions.find(s => s.id === sessionId);
       if (!session || (session.status === 'closed' || session.status === 'beeindigd')) {
         showToast(t('sessions.alerts.cannotDeleteClosed'), 'error');
+        setSessionToDelete(null);
         return;
       }
 
-      // Delete the session document
-      await deleteDoc(doc(db, 'sessions', sessionId));
-      
-      // Also delete messages associated with this session
-      const q = query(collection(db, 'messages'), where('sessionId', '==', sessionId));
-      const snapshot = await getDocs(q);
+      // Delete all messages in the session subcollection
+      const messagesQuery = query(collection(db, 'sessions', sessionId, 'messages'));
+      const messagesSnapshot = await getDocs(messagesQuery);
       const batch = writeBatch(db);
-      snapshot.docs.forEach(d => batch.delete(d.ref));
+      messagesSnapshot.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
 
+      // Delete the session document
+      await deleteDoc(doc(db, 'sessions', sessionId));
+
       showToast(t('sessions.alerts.sessionDeleted'), 'success');
+      setSessionToDelete(null);
+      
+      // If the deleted session was active, close it and return to dashboard
+      if (activeSession?.id === sessionId) {
+        setActiveSession(null);
+        setView('sessions');
+      }
     } catch (e) {
       console.error("Failed to delete session", e);
       handleFirestoreError(e, OperationType.DELETE, `sessions/${sessionId}`);
+      setSessionToDelete(null);
     }
   };
 
@@ -3623,6 +3632,49 @@ function MainApp() {
                     {t('common.start')}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Session Confirmation Modal */}
+      <AnimatePresence>
+        {sessionToDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl"
+            >
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mx-auto mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-serif font-bold text-stone-900 text-center mb-2">
+                {t('sessions.deleteConfirmTitle')}
+              </h3>
+              <p className="text-stone-500 text-center text-sm mb-6">
+                {t('sessions.deleteConfirmMessage')}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSessionToDelete(null)}
+                  className="flex-1 py-3 bg-stone-100 text-stone-900 rounded-2xl font-bold hover:bg-stone-200 transition-all active:scale-[0.98]"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={() => handleDeleteSession(sessionToDelete)}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-all active:scale-[0.98]"
+                >
+                  {t('common.delete')}
+                </button>
               </div>
             </motion.div>
           </motion.div>
