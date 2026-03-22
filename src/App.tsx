@@ -3193,12 +3193,15 @@ function MainApp() {
                     {activeSession.type === 'couple' && (
                       <div className="flex gap-2 mb-3 px-1">
                         <button 
-                          onClick={() => setSelectedSpeakerUid(user.uid)}
+                          onClick={() => {
+                            setSelectedSpeakerUid(user.uid);
+                            setNewMessage('');
+                          }}
                           className={cn(
-                            "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border",
+                            "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border cursor-pointer",
                             selectedSpeakerUid === user.uid 
                               ? "bg-stone-900 text-white border-stone-900 shadow-sm" 
-                              : "bg-white text-stone-500 border-stone-200 hover:border-stone-300"
+                              : "bg-white text-stone-500 border-stone-200 hover:border-stone-900 hover:text-stone-900"
                           )}
                         >
                           {decryptedProfile.name || t('chat.you')}
@@ -3206,13 +3209,16 @@ function MainApp() {
                         <button 
                           onClick={() => {
                             const otherUid = activeSession.ownerUid === user.uid ? activeSession.partnerUid : activeSession.ownerUid;
-                            if (otherUid) setSelectedSpeakerUid(otherUid);
+                            if (otherUid) {
+                              setSelectedSpeakerUid(otherUid);
+                              setNewMessage('');
+                            }
                           }}
                           className={cn(
-                            "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border",
-                            selectedSpeakerUid !== user.uid 
+                            "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border cursor-pointer",
+                            selectedSpeakerUid !== user.uid && selectedSpeakerUid !== null
                               ? "bg-stone-900 text-white border-stone-900 shadow-sm" 
-                              : "bg-white text-stone-500 border-stone-200 hover:border-stone-300"
+                              : "bg-white text-stone-500 border-stone-200 hover:border-stone-900 hover:text-stone-900"
                           )}
                         >
                           {decryptedProfile.partnerName || t('chat.partner')}
