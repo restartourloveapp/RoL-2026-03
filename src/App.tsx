@@ -81,6 +81,7 @@ import { coaches, getCoachesList, getCoach } from './config/coachData';
 // --- Types ---
 interface UserProfile {
   uid: string;
+  profileId: string; // Unique ID for this person (independent of user account)
   email: string;
   displayName: string;
   photoURL: string;
@@ -92,6 +93,7 @@ interface UserProfile {
   wrappedRK?: { ciphertext: string; iv: string };
   subscriptionTier: 'free' | 'premium';
   partnerUid?: string;
+  partnerId?: string; // Unique ID of the partner person
   role?: 'user' | 'admin';
   language?: Language;
   createdAt?: any;
@@ -107,8 +109,9 @@ interface UserProfile {
 interface ChatSession {
   id: string;
   type: 'personal' | 'couple';
-  ownerUid: string;
-  partnerUid?: string;
+  ownerUid: string; // User ID of account owner (for access control)
+  ownerProfileId: string; // Profile ID of the person who owns this session
+  partnerProfileId?: string; // Profile ID of the partner (for couple sessions)
   coachPersona: AI.CoachPersona;
   coachGender: AI.CoachGender;
   status: 'active' | 'archived' | 'closed' | 'beeindigd';
@@ -123,7 +126,8 @@ interface ChatSession {
 
 interface ChatMessage {
   id: string;
-  senderUid: string;
+  senderUid: string; // User ID (for backward compatibility and encryption keys)
+  senderProfileId?: string; // Profile ID (for identifying which person sent it in couple sessions)
   content: string;
   iv: string;
   createdAt: any;
@@ -927,8 +931,14 @@ function MainApp() {
     const pubKeyB64 = await Encryption.exportPublicKey(exchangePair.publicKey);
     const wrappedPrivKey = await Encryption.exportPrivateKey(exchangePair.privateKey, derivedKek);
 
+    // Generate unique profile ID (independent of user account)
+    const profileId = crypto.randomUUID();
+    const partnerId = crypto.randomUUID(); // Unique ID for the partner person
+
     const newProfile: UserProfile = {
       uid: user.uid,
+      profileId,
+      partnerId,
       email: user.email!,
       displayName: user.displayName || 'Anonymous',
       photoURL: user.photoURL || '',
@@ -1098,7 +1108,7 @@ function MainApp() {
     }
   };
   const handleCreateSession = async () => {
-    if (!user || !ck) return;
+    if (!user || !ck || !profile?.profileId) return;
 
     // Check free tier limit (max 3 sessions)
     if (profile?.subscriptionTier === 'free' && sessions.length >= 3) {
@@ -1116,11 +1126,24 @@ function MainApp() {
       partnerWrappedSSK = await Encryption.wrapKey(ssk, rk);
     }
 
+    // Determine owner profile ID
+    let ownerProfileId = profile.profileId;
+    let partnerProfileId: string | undefined;
+
+    if (newSessionConfig.type === 'personal' && newSessionConfig.personalSessionOwnerId === 'partner') {
+      // Personal session for partner
+      ownerProfileId = profile.partnerId || profile.profileId;
+    }
+    
+    // For couple sessions, always set both profile IDs
+    if (newSessionConfig.type === 'couple') {
+      partnerProfileId = profile.partnerId;
+    }
+
     const sessionData: any = {
       type: newSessionConfig.type,
-      ownerUid: newSessionConfig.type === 'personal' && newSessionConfig.personalSessionOwnerId 
-        ? newSessionConfig.personalSessionOwnerId 
-        : user.uid,
+      ownerUid: user.uid, // User account owner (for access control)
+      ownerProfileId,
       coachPersona: newSessionConfig.persona,
       coachGender: newSessionConfig.gender,
       status: 'active',
@@ -1129,9 +1152,9 @@ function MainApp() {
       wrappedSSK: wrappedSSK
     };
 
-    // Always set partnerUid for couple sessions (independent of key wrapping)
-    if (newSessionConfig.type === 'couple') {
-      sessionData.partnerUid = profile?.partnerUid;
+    // Set partner profile ID for couple sessions
+    if (partnerProfileId) {
+      sessionData.partnerProfileId = partnerProfileId;
       if (partnerWrappedSSK) {
         sessionData.partnerWrappedSSK = partnerWrappedSSK;
       }
@@ -1725,26 +1748,29 @@ function MainApp() {
         if (activeSession.type === 'couple' && aiResult.nextSpeaker) {
           console.log('DEBUG: Condition met, setting nextSpeaker:', aiResult.nextSpeaker);
           if (aiResult.nextSpeaker === 'user') {
-            console.log('DEBUG: Setting speaker to user:', user!.uid);
-            setSelectedSpeakerUid(user!.uid);
+            console.log('DEBUG: Setting speaker to current profile:', profile?.profileId);
+            setSelectedSpeakerUid(profile?.profileId || user!.uid);
           } else if (aiResult.nextSpeaker === 'partner') {
-            // Determine partner UID from activeSession (stored when session was created)
-            let partnerUid: string | undefined;
-            if (activeSession.ownerUid === user!.uid) {
-              // User is owner -> partner UID is stored in session.partnerUid
-              partnerUid = activeSession.partnerUid;
-              console.log('DEBUG: User is owner, partner UID from session:', partnerUid);
+            // Determine partner profile ID from activeSession
+            let partnerProfileId: string | undefined;
+            
+            // In the session, ownerProfileId is one person, partnerProfileId is the other
+            // We need to select the one that's not currently speaking
+            if (profile?.profileId === activeSession.ownerProfileId) {
+              // Current profile is owner -> select partner
+              partnerProfileId = activeSession.partnerProfileId;
+              console.log('DEBUG: Current profile is owner, selecting partner profile:', partnerProfileId);
             } else {
-              // User is NOT owner -> they are the partner, owner is the other speaker
-              partnerUid = activeSession.ownerUid;
-              console.log('DEBUG: User is partner, owner UID:', partnerUid);
+              // Current profile is partner -> select owner
+              partnerProfileId = activeSession.ownerProfileId;
+              console.log('DEBUG: Current profile is partner, selecting owner profile:', partnerProfileId);
             }
             
-            if (partnerUid) {
-              console.log('DEBUG: Setting speaker to partner:', partnerUid);
-              setSelectedSpeakerUid(partnerUid);
+            if (partnerProfileId) {
+              console.log('DEBUG: Setting speaker to partner profile:', partnerProfileId);
+              setSelectedSpeakerUid(partnerProfileId);
             } else {
-              console.warn('DEBUG: Could not determine partner UID - no partnerUid in session');
+              console.warn('DEBUG: Could not determine partner profile ID');
             }
           }
         }
@@ -3252,9 +3278,9 @@ function MainApp() {
                     )}>
                       {m.senderUid === 'ai_coach' 
                         ? t('chat.coachTitle', { persona: t(`sessions.personas.${getCoach(activeSession!.coachPersona).id}.name`) }) 
-                        : m.senderUid === user.uid 
+                        : m.senderUid === user.uid && m.senderProfileId === profile?.profileId
                           ? (decryptedProfile.name || t('chat.you')) 
-                          : m.senderUid === activeSession?.partnerUid
+                          : m.senderUid === user.uid && m.senderProfileId === profile?.partnerId
                             ? (decryptedProfile.partnerName || t('chat.partner'))
                             : t('chat.unknown')}
                     </span>
@@ -3311,9 +3337,17 @@ function MainApp() {
                         </button>
                         <button 
                           onClick={() => {
-                            const otherUid = activeSession.ownerUid === user.uid ? activeSession.partnerUid : activeSession.ownerUid;
-                            if (otherUid) {
-                              setSelectedSpeakerUid(otherUid);
+                            // In couple sessions, determine the "other" person (not the current speaker)
+                            let otherProfileId: string | undefined;
+                            if (selectedSpeakerUid === profile?.profileId) {
+                              // Currently showing current profile -> select partner
+                              otherProfileId = profile?.partnerId;
+                            } else {
+                              // Currently showing partner -> select current profile
+                              otherProfileId = profile?.profileId;
+                            }
+                            if (otherProfileId) {
+                              setSelectedSpeakerUid(otherProfileId);
                               setNewMessage('');
                             }
                           }}
@@ -3584,10 +3618,10 @@ function MainApp() {
                     <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t('sessions.personal')} - {t('sessions.whoIsThisFor')}</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button
-                        onClick={() => setNewSessionConfig(prev => ({ ...prev, personalSessionOwnerId: user!.uid }))}
+                        onClick={() => setNewSessionConfig(prev => ({ ...prev, personalSessionOwnerId: undefined }))}
                         className={cn(
                           "p-4 rounded-2xl border-2 transition-all text-center",
-                          newSessionConfig.personalSessionOwnerId === user!.uid
+                          !newSessionConfig.personalSessionOwnerId
                             ? "border-emerald-500 bg-emerald-50"
                             : "border-stone-100 hover:border-stone-300"
                         )}
@@ -3597,18 +3631,17 @@ function MainApp() {
                       </button>
                       <button
                         onClick={() => {
-                          const partnerId = profile?.partnerUid;
-                          if (partnerId) {
-                            setNewSessionConfig(prev => ({ ...prev, personalSessionOwnerId: partnerId }));
+                          if (profile?.partnerId) {
+                            setNewSessionConfig(prev => ({ ...prev, personalSessionOwnerId: 'partner' }));
                           }
                         }}
-                        disabled={!profile?.partnerUid}
+                        disabled={!profile?.partnerId}
                         className={cn(
                           "p-4 rounded-2xl border-2 transition-all text-center",
-                          newSessionConfig.personalSessionOwnerId !== user!.uid && newSessionConfig.personalSessionOwnerId
+                          newSessionConfig.personalSessionOwnerId === 'partner'
                             ? "border-emerald-500 bg-emerald-50"
                             : "border-stone-100 hover:border-stone-300",
-                          !profile?.partnerUid && "opacity-50 cursor-not-allowed"
+                          !profile?.partnerId && "opacity-50 cursor-not-allowed"
                         )}
                       >
                         <p className="font-bold text-sm text-stone-900">{decryptedProfile.partnerName || t('chat.partner')}</p>
