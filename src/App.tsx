@@ -381,6 +381,7 @@ function MainApp() {
     type: 'personal' | 'couple';
     persona: AI.CoachPersona;
     gender: AI.CoachGender;
+    personalSessionOwnerId?: string;
   }>({
     type: 'couple',
     persona: profile?.defaultCoupleCoach || 'solin',
@@ -1110,7 +1111,9 @@ function MainApp() {
 
     const sessionData: any = {
       type: newSessionConfig.type,
-      ownerUid: user.uid,
+      ownerUid: newSessionConfig.type === 'personal' && newSessionConfig.personalSessionOwnerId 
+        ? newSessionConfig.personalSessionOwnerId 
+        : user.uid,
       coachPersona: newSessionConfig.persona,
       coachGender: newSessionConfig.gender,
       status: 'active',
@@ -3555,6 +3558,45 @@ function MainApp() {
                     </div>
                   </div>
                 </div>
+
+                {newSessionConfig.type === 'personal' && (
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t('sessions.personal')} - {t('sessions.whoIsThisFor')}</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => setNewSessionConfig(prev => ({ ...prev, personalSessionOwnerId: user!.uid }))}
+                        className={cn(
+                          "p-4 rounded-2xl border-2 transition-all text-center",
+                          newSessionConfig.personalSessionOwnerId === user!.uid
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-stone-100 hover:border-stone-300"
+                        )}
+                      >
+                        <p className="font-bold text-sm text-stone-900">{decryptedProfile.name || t('chat.you')}</p>
+                        <p className="text-[10px] text-stone-500 mt-1">{t('sessions.forMe')}</p>
+                      </button>
+                      <button
+                        onClick={() => {
+                          const partnerId = profile?.partnerUid;
+                          if (partnerId) {
+                            setNewSessionConfig(prev => ({ ...prev, personalSessionOwnerId: partnerId }));
+                          }
+                        }}
+                        disabled={!profile?.partnerUid}
+                        className={cn(
+                          "p-4 rounded-2xl border-2 transition-all text-center",
+                          newSessionConfig.personalSessionOwnerId !== user!.uid && newSessionConfig.personalSessionOwnerId
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-stone-100 hover:border-stone-300",
+                          !profile?.partnerUid && "opacity-50 cursor-not-allowed"
+                        )}
+                      >
+                        <p className="font-bold text-sm text-stone-900">{decryptedProfile.partnerName || t('chat.partner')}</p>
+                        <p className="text-[10px] text-stone-500 mt-1">{t('sessions.forPartner')}</p>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-3 pt-4">
                   <button 
