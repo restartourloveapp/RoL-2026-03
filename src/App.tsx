@@ -1700,23 +1700,31 @@ function MainApp() {
         });
 
         // Auto-select next speaker in couple sessions
-        console.log('DEBUG: AI Result', {
-          nextSpeaker: aiResult.nextSpeaker,
-          sessionType: activeSession.type,
-          ownerUid: activeSession.ownerUid,
-          userUid: user!.uid,
-          partnerUid: activeSession.partnerUid
-        });
-        
         if (activeSession.type === 'couple' && aiResult.nextSpeaker) {
           console.log('DEBUG: Condition met, setting nextSpeaker:', aiResult.nextSpeaker);
           if (aiResult.nextSpeaker === 'user') {
             console.log('DEBUG: Setting speaker to user:', user!.uid);
             setSelectedSpeakerUid(user!.uid);
           } else if (aiResult.nextSpeaker === 'partner') {
-            const partnerUid = activeSession.ownerUid === user!.uid ? activeSession.partnerUid : activeSession.ownerUid;
-            console.log('DEBUG: Setting speaker to partner:', partnerUid);
-            if (partnerUid) setSelectedSpeakerUid(partnerUid);
+            // Determine partner UID: 
+            // If user is owner, partner is in profile; otherwise user IS the partner
+            let partnerUid: string | undefined;
+            if (activeSession.ownerUid === user!.uid) {
+              // User is owner -> partner is from profile
+              partnerUid = profile?.partnerUid;
+              console.log('DEBUG: User is owner, partner UID from profile:', partnerUid);
+            } else {
+              // User is NOT owner -> they are the partner, owner is the other speaker
+              partnerUid = activeSession.ownerUid;
+              console.log('DEBUG: User is partner, owner UID:', partnerUid);
+            }
+            
+            if (partnerUid) {
+              console.log('DEBUG: Setting speaker to partner:', partnerUid);
+              setSelectedSpeakerUid(partnerUid);
+            } else {
+              console.warn('DEBUG: Could not determine partner UID - profile.partnerUid might not be loaded yet');
+            }
           }
         }
       }
