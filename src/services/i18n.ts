@@ -89,6 +89,7 @@ export const translations = {
         partnerLinked: "Partner gekoppeld!",
         resourcesSeeded: "Crisisbronnen gegenereerd!",
         freeLimit: "Gratis limiet bereikt (40 berichten). Upgrade voor onbeperkte sessies.",
+        freeLimitSessions: "Je hebt het maximum van 3 gratis sessies bereikt. Upgrade naar Premium voor onbeperkte sessies.",
         verificationSent: "Verificatie e-mail verzonden!",
         emailNotVerified: "E-mail is nog niet geverifieerd. Controleer je inbox."
       }
@@ -347,6 +348,7 @@ export const translations = {
         partnerLinked: "Partner linked!",
         resourcesSeeded: "Crisis resources seeded!",
         freeLimit: "Free tier limit reached (40 messages). Upgrade for unlimited sessions.",
+        freeLimitSessions: "You have reached the maximum of 3 free sessions. Upgrade to Premium for unlimited sessions.",
         verificationSent: "Verification email sent!",
         emailNotVerified: "Email is not verified yet. Please check your inbox."
       }

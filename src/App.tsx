@@ -1100,6 +1100,13 @@ function MainApp() {
   const handleCreateSession = async () => {
     if (!user || !ck) return;
 
+    // Check free tier limit (max 3 sessions)
+    if (profile?.subscriptionTier === 'free' && sessions.length >= 3) {
+      showToast(t('auth.alerts.freeLimitSessions'), 'error');
+      handleUpgrade();
+      return;
+    }
+
     // Generate SSK for this session
     const ssk = await Encryption.generateCK();
     const wrappedSSK = await Encryption.wrapKey(ssk, ck);
@@ -3379,8 +3386,9 @@ function MainApp() {
                         onClick={() => {
                           setSummary(null);
                           setActiveSession(null);
+                          setView('sessions');
                         }}
-                        className="w-full mt-8 py-4 bg-stone-900 text-white rounded-2xl font-bold"
+                        className="w-full mt-8 py-4 bg-stone-900 text-white rounded-2xl font-bold hover:bg-stone-800 transition-all active:scale-[0.98]"
                       >
                         {t('sessions.finishSession')}
                       </button>
