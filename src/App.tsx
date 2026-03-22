@@ -1866,11 +1866,13 @@ function MainApp() {
 
           <div className="space-y-6">
             <input 
-              type="password" 
+              type="text"
+              inputMode="numeric"
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="••••••"
               className="w-full text-center text-4xl tracking-widest py-4 bg-stone-50 border-2 border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none transition-colors"
+              style={{ WebkitTextSecurity: 'disc' } as any}
             />
             <button 
               onClick={profile ? handleVerifyPin : handleSetupPin}
