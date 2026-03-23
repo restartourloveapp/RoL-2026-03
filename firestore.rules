@@ -264,7 +264,12 @@ service cloud.firestore {
 
     // Partner Requests collection
     match /partner_requests/{requestId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.acceptedByUid || isAdmin());
+      allow read: if isAuthenticated() && (
+                    request.auth.uid == resource.data.fromUid || 
+                    request.auth.uid == resource.data.acceptedByUid ||
+                    request.auth.email == resource.data.toEmail ||
+                    isAdmin()
+                  );
       allow create: if isAuthenticated() && request.auth.uid == request.resource.data.fromUid && isValidPartnerRequest(request.resource.data);
       allow update: if isAuthenticated() && (request.auth.uid == resource.data.fromUid || isAdmin()) &&
                       isValidPartnerRequest(request.resource.data) &&
