@@ -70,7 +70,7 @@ service cloud.firestore {
       // Can update own profile (but not immutable fields)
       allow update: if isAuthUser(uid) && 
                       !request.resource.data.diff(resource.data).affectedKeys()
-                        .hasAny(['uid', 'email', 'pinVerifier', 'pinSalt', 'wrappedCK', 'createdAt']);
+                        .hasAny(['uid', 'email', 'pinVerifier', 'pinSalt', 'wrappedCK', 'createdAt', 'role']);
       
       // Sub-collection: Session meta summaries
       match /session_meta_summaries/{summaryId} {

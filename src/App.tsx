@@ -368,7 +368,7 @@ function MainApp() {
     partnerPronouns?: string;
   }>({});
 
-  const isAdmin = user?.email === 'wouter.de.heer@gmail.com' || profile?.role === 'admin';
+  const isAdmin = profile?.role === 'admin';
   const [partnerRequests, setPartnerRequests] = useState<PartnerRequest[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [homework, setHomework] = useState<Homework[]>([]);
