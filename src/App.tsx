@@ -3257,10 +3257,10 @@ function MainApp() {
                     <div className={cn(
                       "p-3 rounded-2xl text-sm leading-relaxed",
                       m.senderUid === user.uid 
-                        ? "bg-stone-900 text-white rounded-tr-none shadow-sm" 
+                        ? "bg-slate-700 text-white rounded-tr-none shadow-sm" 
                         : m.senderUid === 'ai_coach'
                           ? "bg-emerald-50 text-emerald-900 border border-emerald-100 shadow-sm"
-                          : "bg-stone-700 text-white rounded-tl-none"
+                          : "bg-slate-700 text-white rounded-tl-none"
                     )}>
                       <div className="prose prose-sm prose-stone dark:prose-invert">
                         <ReactMarkdown>
@@ -3332,49 +3332,7 @@ function MainApp() {
 
                 {activeSession.status !== 'closed' && activeSession.status !== 'beeindigd' ? (
                   <>
-                    {activeSession.type === 'couple' && (
-                      <div className="flex gap-2 mb-3 px-1">
-                        <button 
-                          onClick={() => {
-                            setSelectedSpeakerUid(user.uid);
-                            setNewMessage('');
-                          }}
-                          className={cn(
-                            "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border cursor-pointer",
-                            selectedSpeakerUid === user.uid 
-                              ? "bg-stone-900 text-white border-stone-900 shadow-sm" 
-                              : "bg-white text-stone-500 border-stone-200 hover:border-stone-900 hover:text-stone-900"
-                          )}
-                        >
-                          {decryptedProfile.name || t('chat.you')}
-                        </button>
-                        <button 
-                          onClick={() => {
-                            // In couple sessions, determine the "other" person (not the current speaker)
-                            let otherProfileId: string | undefined;
-                            if (selectedSpeakerUid === profile?.profileId) {
-                              // Currently showing current profile -> select partner
-                              otherProfileId = profile?.partnerId;
-                            } else {
-                              // Currently showing partner -> select current profile
-                              otherProfileId = profile?.profileId;
-                            }
-                            if (otherProfileId) {
-                              setSelectedSpeakerUid(otherProfileId);
-                              setNewMessage('');
-                            }
-                          }}
-                          className={cn(
-                            "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border cursor-pointer",
-                            selectedSpeakerUid !== user.uid && selectedSpeakerUid !== null
-                              ? "bg-stone-900 text-white border-stone-900 shadow-sm" 
-                              : "bg-white text-stone-500 border-stone-200 hover:border-stone-900 hover:text-stone-900"
-                          )}
-                        >
-                          {decryptedProfile.partnerName || t('chat.partner')}
-                        </button>
-                      </div>
-                    )}
+
 
                     <div className="flex items-end gap-2">
                       <button 
@@ -3395,7 +3353,11 @@ function MainApp() {
                             }
                           }
                         }}
-                        placeholder={t('sessions.messagePlaceholder')}
+                        placeholder={activeSession.type === 'couple' 
+                          ? `${selectedSpeakerUid === user.uid 
+                              ? (decryptedProfile.name || t('chat.you'))
+                              : (decryptedProfile.partnerName || t('chat.partner'))}: ${t('sessions.messagePlaceholder')}`
+                          : t('sessions.messagePlaceholder')}
                         className="flex-1 bg-stone-50 border border-stone-200 rounded-2xl p-3 focus:outline-none focus:border-emerald-500 transition-all resize-none min-h-[44px] max-h-[120px] text-sm"
                       />
                       <button 
