@@ -1626,43 +1626,70 @@ function MainApp() {
         } catch (e) { console.error("Failed to decrypt msg summary", e); }
       }
 
-      // 2. Get Recent Session Summaries (last 10)
-      // Split into two queries to avoid OR index issues
-      const ownerSessionsQuery = query(
-        collection(db, 'sessions'),
-        where('ownerUid', '==', user!.uid),
-        orderBy('createdAt', 'desc'),
-        limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
-      );
-      const partnerSessionsQuery = query(
-        collection(db, 'sessions'),
-        where('partnerUid', '==', user!.uid),
-        orderBy('createdAt', 'desc'),
-        limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
-      );
+      // 2. Get Recent Session Summaries (context depends on session type)
+      // For PERSONAL sessions: only previous personal sessions from current user
+      // For COUPLE sessions: only previous couple sessions
+      
+      console.debug(`[Context] Session type: ${activeSession.type}, fetching relevant previous sessions`);
+      
+      let recentSessions: Array<[string, any]> = [];
 
-      const [ownerSnap, partnerSnap] = await Promise.all([
-        getDocs(ownerSessionsQuery),
-        getDocs(partnerSessionsQuery)
-      ]);
-
-      // Combine and deduplicate
-      const allSessions = new Map<string, any>();
-      ownerSnap.docs.forEach(d => allSessions.set(d.id, d.data()));
-      partnerSnap.docs.forEach(d => allSessions.set(d.id, d.data()));
-
-      // Sort by createdAt and limit
-      const sortedSessions = Array.from(allSessions.entries())
-        .sort((a, b) => {
-          const timeA = a[1].createdAt?.toMillis?.() || 0;
-          const timeB = b[1].createdAt?.toMillis?.() || 0;
-          return timeB - timeA;
-        })
-        .slice(0, AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1);
-
-      for (const [sessionId, data] of sortedSessions) {
-        if (sessionId === activeSession.id) continue;
+      if (activeSession.type === 'personal') {
+        // PERSONAL SESSION: Only get previous personal sessions where current user is owner
+        const personalQuery = query(
+          collection(db, 'sessions'),
+          where('ownerUid', '==', user!.uid),
+          where('type', '==', 'personal'),
+          orderBy('createdAt', 'desc'),
+          limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
+        );
         
+        const personalSnap = await getDocs(personalQuery);
+        recentSessions = personalSnap.docs
+          .map(d => [d.id, d.data()] as [string, any])
+          .filter(([id]) => id !== activeSession.id);
+        
+        console.debug(`[Context] Personal session: Found ${recentSessions.length} previous personal sessions for current user`);
+      } else {
+        // COUPLE SESSION: Get previous couple sessions (from both owner and partner perspectives)
+        const coupleOwnerQuery = query(
+          collection(db, 'sessions'),
+          where('ownerUid', '==', user!.uid),
+          where('type', '==', 'couple'),
+          orderBy('createdAt', 'desc'),
+          limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
+        );
+        
+        const couplePartnerQuery = query(
+          collection(db, 'sessions'),
+          where('partnerUid', '==', user!.uid),
+          where('type', '==', 'couple'),
+          orderBy('createdAt', 'desc'),
+          limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
+        );
+        
+        const [coupleOwnerSnap, couplePartnerSnap] = await Promise.all([
+          getDocs(coupleOwnerQuery),
+          getDocs(couplePartnerQuery)
+        ]);
+        
+        const coupleSessions = new Map<string, any>();
+        coupleOwnerSnap.docs.forEach(d => coupleSessions.set(d.id, d.data()));
+        couplePartnerSnap.docs.forEach(d => coupleSessions.set(d.id, d.data()));
+        
+        recentSessions = Array.from(coupleSessions.entries())
+          .filter(([id]) => id !== activeSession.id)
+          .sort((a, b) => {
+            const timeA = a[1].createdAt?.toMillis?.() || 0;
+            const timeB = b[1].createdAt?.toMillis?.() || 0;
+            return timeB - timeA;
+          });
+        
+        console.debug(`[Context] Couple session: Found ${recentSessions.length} previous couple sessions`);
+      }
+
+      // Load summaries from recent sessions
+      for (const [sessionId, data] of recentSessions) {
         // Only process sessions with summaries
         if (!data.summary || !data.summary.ciphertext) {
           console.debug(`[Context] Session ${sessionId.slice(0, 6)}... has no summary, skipping`);
@@ -1692,62 +1719,75 @@ function MainApp() {
         }
       }
 
-      // 3. Get Shared Personal Summaries (last 3) - only for couple sessions
+      // 3. Get Shared Personal Summaries (COUPLE SESSIONS ONLY) - ONLY from timeline (explicit sharing)
+      // CRITICAL: Personal sessions can ONLY be used as context if they appear in the couple's timeline
+      // This ensures privacy: sessions are only included if BOTH partners explicitly shared them
       if (activeSession.type === 'couple') {
-        // Similarly split into two queries
-        const personalOwnerQuery = query(
-          collection(db, 'sessions'),
-          where('type', '==', 'personal'),
-          where('ownerUid', '==', user!.uid),
-          where('status', 'in', ['archived', 'beeindigd']),
+        console.debug(`[Context] Couple session detected - scanning timeline for shared personal sessions`);
+        
+        // Step 1: Find personal session entries in this couple's timeline (birth proof of sharing)
+        const timelineQuery = query(
+          collection(db, 'timeline'),
+          where('ownerUid', '==', activeSession.ownerUid),
+          where('type', 'in', ['milestone', 'insight']), // Summaries are stored as milestones
           orderBy('createdAt', 'desc'),
-          limit(AI_CONFIG.MAX_SHARED_PERSONAL_SUMMARIES)
+          limit(50) // Look at recent timeline entries
         );
-        const personalPartnerQuery = query(
-          collection(db, 'sessions'),
-          where('type', '==', 'personal'),
-          where('partnerUid', '==', user!.uid),
-          where('status', 'in', ['archived', 'beeindigd']),
-          orderBy('createdAt', 'desc'),
-          limit(AI_CONFIG.MAX_SHARED_PERSONAL_SUMMARIES)
-        );
-
-        const [personalOwnerSnap, personalPartnerSnap] = await Promise.all([
-          getDocs(personalOwnerQuery),
-          getDocs(personalPartnerQuery)
-        ]);
-
-        const personalSessions = new Map<string, any>();
-        personalOwnerSnap.docs.forEach(d => personalSessions.set(d.id, d.data()));
-        personalPartnerSnap.docs.forEach(d => personalSessions.set(d.id, d.data()));
-
-        const sortedPersonal = Array.from(personalSessions.entries())
-          .sort((a, b) => {
-            const timeA = a[1].createdAt?.toMillis?.() || 0;
-            const timeB = b[1].createdAt?.toMillis?.() || 0;
-            return timeB - timeA;
-          })
-          .slice(0, AI_CONFIG.MAX_SHARED_PERSONAL_SUMMARIES);
-
-        for (const [sessionId, data] of sortedPersonal) {
-          if (!data.summary || !data.summary.ciphertext) {
-            console.debug(`[Context] Personal session ${sessionId.slice(0, 6)}... has no summary`);
-            continue;
-          }
-
+        
+        const timelineSnap = await getDocs(timelineQuery);
+        const sharedPersonalSessionIds = new Set<string>();
+        
+        // Parse timeline to find personal session references
+        // Timeline entries that are session summaries have sessionId field
+        for (const timelineDoc of timelineSnap.docs) {
+          const timelineData = timelineDoc.data();
+          const sessionId = timelineData.sessionId;
+          
+          if (!sessionId || sessionId === activeSession.id) continue;
+          
+          // Check if this timeline entry is from a personal session
           try {
-            const wrappedSSK = data.ownerUid === user!.uid ? data.wrappedSSK : data.partnerWrappedSSK;
-            if (!wrappedSSK || !ck) continue;
-
+            const refSession = await getDoc(doc(db, 'sessions', sessionId));
+            if (refSession.exists() && refSession.data().type === 'personal') {
+              sharedPersonalSessionIds.add(sessionId);
+              console.debug(`[Context] Found shared personal session in timeline: ${sessionId.slice(0, 6)}...`);
+            }
+          } catch (e) {
+            console.warn(`[Context] Could not verify session type for ${sessionId.slice(0, 6)}...`);
+          }
+        }
+        
+        console.debug(`[Context] Found ${sharedPersonalSessionIds.size} personal sessions in couple timeline`);
+        
+        // Step 2: Load summaries only from explicitly shared personal sessions
+        for (const sharedSessionId of sharedPersonalSessionIds) {
+          try {
+            const sharedSession = await getDoc(doc(db, 'sessions', sharedSessionId));
+            if (!sharedSession.exists()) continue;
+            
+            const sessionData = sharedSession.data();
+            if (!sessionData.summary || !sessionData.summary.ciphertext) continue;
+            
+            // Determine which SSK to use based on who owns it
+            const wrappedSSK = sessionData.ownerUid === user!.uid 
+              ? sessionData.wrappedSSK 
+              : sessionData.partnerWrappedSSK;
+            
+            if (!wrappedSSK || !ck) {
+              console.warn(`[Context] Cannot decrypt shared personal session ${sharedSessionId.slice(0, 6)}...`);
+              continue;
+            }
+            
             const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
             const dec = await Encryption.decryptText(
-              { ciphertext: data.summary.ciphertext, iv: data.summary.iv },
+              { ciphertext: sessionData.summary.ciphertext, iv: sessionData.summary.iv },
               ssk
             );
+            
             contextData.sharedPersonalSummaries.push(dec);
-            console.debug(`[Context] ✓ Loaded personal summary from ${sessionId.slice(0, 6)}...`);
+            console.debug(`[Context] ✓ Loaded SHARED personal session summary from ${sharedSessionId.slice(0, 6)}...`);
           } catch (e) {
-            console.error(`[Context] Failed to decrypt personal summary`, e);
+            console.error(`[Context] Failed to load shared personal session ${sharedSessionId.slice(0, 6)}...`, e);
           }
         }
       }
@@ -1866,34 +1906,49 @@ function MainApp() {
       if (isFirstMessage) {
         // Generate a warm welcome message that includes previous session summary and homework check
         console.debug(
-          `[Welcome] Generating welcome message with context:`,
+          `[Welcome] Generating welcome message for ${activeSession.type} session:`,
           {
-            sessionSummaries: contextData.sessionSummaries.length,
-            pendingHomework: contextData.pendingHomework?.length || 0,
-            sharedPersonalSummaries: contextData.sharedPersonalSummaries.length,
-            metaSummaries: contextData.metaSummaries.length
+            prevSessionSummaries: contextData.sessionSummaries.length,
+            sharedPersonalSummaries: activeSession.type === 'couple' ? contextData.sharedPersonalSummaries.length : 0,
+            pendingHomework: contextData.pendingHomework?.length || 0
           }
         );
+        
+        // Build profile context based on session type
+        let profileContext: any = undefined;
+        if (activeSession.type === 'personal' && decryptedProfile) {
+          // PERSONAL: Only include current user's profile
+          profileContext = {
+            userName: decryptedProfile.name,
+            userPronouns: decryptedProfile.pronouns
+          };
+          console.debug(`[Welcome] Personal session: Using only current user profile`);
+        } else if (activeSession.type === 'couple' && decryptedProfile) {
+          // COUPLE: Include both user and partner names
+          profileContext = {
+            userName: decryptedProfile.name,
+            userPronouns: decryptedProfile.pronouns,
+            partnerName: decryptedProfile.partnerName,
+            partnerPronouns: decryptedProfile.partnerPronouns
+          };
+          console.debug(`[Welcome] Couple session: Using both profiles`);
+        }
         
         aiResult = await AI.generateSessionWelcome(
           activeSession.coachPersona,
           activeSession.coachGender,
           language,
-          decryptedProfile ? {
-            userName: decryptedProfile.name,
-            userPronouns: decryptedProfile.pronouns,
-            partnerName: decryptedProfile.partnerName,
-            partnerPronouns: decryptedProfile.partnerPronouns
-          } : undefined,
+          profileContext,
           activeSession.type === 'couple',
           {
             sessionSummaries: contextData.sessionSummaries,
+            sharedPersonalSummaries: contextData.sharedPersonalSummaries,
             pendingHomework: contextData.pendingHomework,
             lastHomework: contextData.lastHomework
           }
         );
         
-        console.debug(`[Welcome] ✓ Welcome message generated:`, aiResult.text?.slice(0, 100) + '...');
+        console.debug(`[Welcome] ✓ Welcome message generated (${aiResult.text?.slice(0, 80)}...)`);
       } else {
         // Normal conversation flow
         aiResult = await AI.generateCoachResponse(

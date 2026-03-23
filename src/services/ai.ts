@@ -197,6 +197,7 @@ export async function generateSessionWelcome(
   isCoupleSession: boolean = false,
   context?: {
     sessionSummaries?: string[],
+    sharedPersonalSummaries?: string[],
     pendingHomework?: string[],
     lastHomework?: string,
   }
@@ -214,21 +215,34 @@ export async function generateSessionWelcome(
 
   const sessionContext = isCoupleSession 
     ? "This is a COUPLE session (three-way conversation). Both partners are present." 
-    : "This is a PERSONAL session.";
+    : "This is a PERSONAL session for one individual.";
 
   let welcomeContext = "";
   console.debug(`[AI] Welcome context received:`, {
-    hasSummaries: !!context?.sessionSummaries?.length,
-    summariesCount: context?.sessionSummaries?.length || 0,
+    isCoupleSession,
+    hasPrevSessionSummary: !!context?.sessionSummaries?.length,
+    prevSessionCount: context?.sessionSummaries?.length || 0,
+    hasSharedPersonalContext: !!context?.sharedPersonalSummaries?.length,
+    sharedPersonalCount: context?.sharedPersonalSummaries?.length || 0,
     hasHomework: !!context?.pendingHomework?.length,
     homeworkCount: context?.pendingHomework?.length || 0,
-    hasLastHomework: !!context?.lastHomework
   });
   
   if (context?.sessionSummaries?.length) {
-    console.debug(`[AI] Including ${context.sessionSummaries.length} session summary/ies`);
+    console.debug(`[AI] Including previous ${context.sessionSummaries[0].split('\n')[0].slice(0, 50)}...`);
     welcomeContext += `\n[PREVIOUS SESSION SUMMARY]:\n${context.sessionSummaries[0]}\n`;
   }
+  
+  // SHARED PERSONAL CONTEXT: Only for couple sessions and only if explicitly shared
+  if (isCoupleSession && context?.sharedPersonalSummaries?.length) {
+    console.debug(`[AI] Including ${context.sharedPersonalSummaries.length} shared personal session summary/ies`);
+    welcomeContext += `\n[SHARED PERSONAL CONTEXT (with explicit permission)]:\n`;
+    context.sharedPersonalSummaries.forEach((summary, idx) => {
+      welcomeContext += `${idx > 0 ? '\n---\n' : ''}${summary}`;
+    });
+    welcomeContext += `\n`;
+  }
+  
   if (context?.pendingHomework?.length) {
     console.debug(`[AI] Including ${context.pendingHomework.length} homework items`);
     welcomeContext += `\n[HOMEWORK FROM LAST SESSION]:\n${context.pendingHomework.join("\n")}\n`;
@@ -240,8 +254,12 @@ export async function generateSessionWelcome(
 
   const systemInstruction = `${personaPrompt}
 
-  You are opening a NEW coaching session. Your role right now is to:
-  1. Warmly welcome the couple/person back
+  ${isCoupleSession 
+    ? `You are opening a NEW couple coaching session. Both partners are present.`
+    : `You are opening a NEW personal coaching session with one individual.`}
+
+  Your role right now is to:
+  1. Warmly welcome them back
   2. Briefly acknowledge progress from the last session (if available)
   3. Check in on any homework assignments from the previous session
   4. Ask if they're ready to continue from where you left off, or if there's something new to address
