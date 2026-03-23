@@ -1573,42 +1573,8 @@ function MainApp() {
           }
         }
 
-        // Auto-extract homework at checkpoints (ALL users)
-        if (result.homework && result.homework.length > 0) {
-          for (const task of result.homework) {
-            if (!task.title || !task.description) continue;
-            const encryptedTitle = await Encryption.encryptText(task.title, activeSSK);
-            const encryptedDescription = await Encryption.encryptText(task.description, activeSSK);
-            await addDoc(collection(db, 'homework'), {
-              sessionId: activeSession.id,
-              ownerUid: user!.uid,
-              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
-              title: encryptedTitle.ciphertext,
-              titleIv: encryptedTitle.iv,
-              description: encryptedDescription.ciphertext,
-              descriptionIv: encryptedDescription.iv,
-              status: 'assigned',
-              dueDate: task.dueDate ? new Date(task.dueDate) : null,
-              createdAt: serverTimestamp()
-            });
-
-            // Also save homework as a timeline entry
-            const homeworkTimelineTitle = language === 'nl' ? 'Huiswerkopdracht' : 'Homework Assignment';
-            const encryptedHWTimelineTitle = await Encryption.encryptText(`${homeworkTimelineTitle}: ${task.title}`, activeSSK);
-            const encryptedHWTimelineDesc = await Encryption.encryptText(task.description, activeSSK);
-            await addDoc(collection(db, 'timeline'), {
-              sessionId: activeSession.id,
-              ownerUid: user!.uid,
-              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
-              type: 'insight',
-              title: encryptedHWTimelineTitle.ciphertext,
-              titleIv: encryptedHWTimelineTitle.iv,
-              description: encryptedHWTimelineDesc.ciphertext,
-              descriptionIv: encryptedHWTimelineDesc.iv,
-              createdAt: serverTimestamp()
-            });
-          }
-        }
+        // Note: Homework is NOT saved at checkpoints
+        // Homework is only saved once when the session ends to avoid duplicates
       }
 
       await updateDoc(doc(db, 'sessions', activeSession.id), sessionUpdate);
