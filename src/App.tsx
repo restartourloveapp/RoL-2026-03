@@ -356,6 +356,7 @@ function MainApp() {
   const [isConnectingAsPartner, setIsConnectingAsPartner] = useState(false);
   const [connectionCodeError, setConnectionCodeError] = useState<string | null>(null);
   const [mainAccountEmail, setMainAccountEmail] = useState('');
+  const [mainAccountPassword, setMainAccountPassword] = useState('');
   const [confirmedDataWipeout, setConfirmedDataWipeout] = useState(false);
   const [showPartnerDeviceSettings, setShowPartnerDeviceSettings] = useState(false);
 
@@ -1260,7 +1261,9 @@ function MainApp() {
       const response = await fetch('/api/generate-partner-connection-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({
+          mainAccountUid: user.uid
+        })
       });
 
       if (!response.ok) {
@@ -1270,7 +1273,7 @@ function MainApp() {
       }
 
       const data = await response.json();
-      setGeneratedConnectionCode(data.token);
+      setGeneratedConnectionCode(data.code);
       setConnectionCodeExpiresAt(new Date(data.expiresAt));
       showToast('Connection code generated successfully', 'success');
     } catch (error) {
@@ -2602,7 +2605,22 @@ function MainApp() {
                       placeholder="partner@example.com"
                       className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none"
                     />
-                    <p className="text-[10px] text-stone-400">Email of the account to connect to</p>
+                    <p className="text-[10px] text-stone-400">Email of the partner's account</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner's Password</label>
+                    <input 
+                      type="password"
+                      value={mainAccountPassword}
+                      onChange={(e) => {
+                        setMainAccountPassword(e.target.value);
+                        setConnectionCodeError(null);
+                      }}
+                      placeholder="••••••••"
+                      className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-stone-400">Password to verify main account (encrypted, not stored)</p>
                   </div>
 
                   {connectionCodeError && (
@@ -2634,6 +2652,7 @@ function MainApp() {
                       setSetupStep(0);
                       setPartnerConnectionCode('');
                       setMainAccountEmail('');
+                      setMainAccountPassword('');
                       setConnectionCodeError(null);
                       setConfirmedDataWipeout(false);
                     }}
@@ -2651,6 +2670,10 @@ function MainApp() {
                         setConnectionCodeError('Please enter partner email');
                         return;
                       }
+                      if (!mainAccountPassword) {
+                        setConnectionCodeError('Please enter partner password');
+                        return;
+                      }
                       if (!confirmedDataWipeout) {
                         setConnectionCodeError('Please confirm you understand the data will be deleted');
                         return;
@@ -2658,13 +2681,24 @@ function MainApp() {
                       
                       setIsConnectingAsPartner(true);
                       try {
+                        // ✅ SECURITY: Verify main account password here
+                        let mainAccountIdToken: string;
+                        try {
+                          const authResponse = await signInWithEmailAndPassword(auth, mainAccountEmail, mainAccountPassword);
+                          mainAccountIdToken = await authResponse.user.getIdToken();
+                        } catch (authError: any) {
+                          setConnectionCodeError('Invalid email or password for main account');
+                          setIsConnectingAsPartner(false);
+                          return;
+                        }
+                        
                         const response = await fetch('/api/connect-as-partner-device', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
-                            partnerCode: partnerConnectionCode,
-                            mainAccountUid: user?.uid,
-                            mainAccountEmail: mainAccountEmail
+                            partnerAccountUid: user?.uid,
+                            connectionCode: partnerConnectionCode,
+                            mainAccountIdToken
                           })
                         });
 
@@ -2683,7 +2717,7 @@ function MainApp() {
                         setIsConnectingAsPartner(false);
                       }
                     }}
-                    disabled={isConnectingAsPartner || !confirmedDataWipeout || !partnerConnectionCode || partnerConnectionCode.length !== 6 || !mainAccountEmail}
+                    disabled={isConnectingAsPartner || !confirmedDataWipeout || !partnerConnectionCode || partnerConnectionCode.length !== 6 || !mainAccountEmail || !mainAccountPassword}
                     className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                   >
                     {isConnectingAsPartner ? (

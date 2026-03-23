@@ -426,10 +426,14 @@ async function startServer() {
     }
   });
 
-  // ✅ FEATURE: Partner Device Account - Connect as partner device
-  app.post("/api/connect-as-partner-device", async (req, res) => {
+  // ✅ FEATURE: Partner Device Account - Connect as partner device (Password-secured)
+  app.post("/api/connect-as-partner-device", rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // Max 5 attempts per 15 minutes
+    message: 'Too many connection attempts, please try again later',
+  }), async (req, res) => {
     try {
-      const { partnerAccountUid, connectionCode, pinSalt, pinVerifier } = req.body;
+      const { partnerAccountUid, connectionCode, mainAccountIdToken } = req.body;
       
       // Validate input
       if (!partnerAccountUid || typeof partnerAccountUid !== 'string') {
@@ -440,15 +444,21 @@ async function startServer() {
         return res.status(400).json({ error: 'Invalid connection code' });
       }
       
-      if (!pinSalt || typeof pinSalt !== 'string') {
-        return res.status(400).json({ error: 'Missing pinSalt from main account' });
-      }
-      
-      if (!pinVerifier || typeof pinVerifier !== 'string') {
-        return res.status(400).json({ error: 'Missing pinVerifier from main account' });
+      if (!mainAccountIdToken || typeof mainAccountIdToken !== 'string') {
+        return res.status(400).json({ error: 'Missing mainAccountIdToken - please verify password' });
       }
       
       const firestore = getDb();
+      
+      // ✅ SECURITY: Verify the ID token (proves password was correct)
+      let mainAccountUid: string;
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(mainAccountIdToken);
+        mainAccountUid = decodedToken.uid;
+      } catch (error) {
+        console.error('Invalid ID token:', error);
+        return res.status(401).json({ error: 'Invalid or expired password verification. Please log in again.' });
+      }
       
       // Find and validate connection code
       const codesSnap = await firestore.collection('partnerConnectionCodes')
@@ -457,7 +467,7 @@ async function startServer() {
         .get();
       
       if (codesSnap.empty) {
-        return res.status(404).json({ error: 'Connection code not found' });
+        return res.status(404).json({ error: 'Connection code not found or expired' });
       }
       
       const codeDoc = codesSnap.docs[0];
@@ -474,7 +484,10 @@ async function startServer() {
         return res.status(409).json({ error: 'Connection code has already been used' });
       }
       
-      const mainAccountUid = codeData.mainAccountUid;
+      // ✅ SECURITY: Verify the code belongs to the verified main account
+      if (codeData.mainAccountUid !== mainAccountUid) {
+        return res.status(403).json({ error: 'Connection code does not match this account' });
+      }
       
       // Get main account profile
       const mainAccountSnap = await firestore.collection('users').doc(mainAccountUid).get();
@@ -486,11 +499,17 @@ async function startServer() {
       
       // Verify main account is premium
       if (mainAccountData.subscriptionTier !== 'premium') {
-        return res.status(403).json({ error: 'Main account must be premium' });
+        return res.status(403).json({ error: 'Main account must be premium to create partner devices' });
       }
       
-      // Move personal sessions from partner account to new account context
-      // (In the frontend, this will be handled by creating new sessions with moved history)
+      // Extract PIN values from main account (now we've verified password)
+      const pinSalt = mainAccountData.pinSalt;
+      const pinVerifier = mainAccountData.pinVerifier;
+      
+      if (!pinSalt || !pinVerifier) {
+        console.error('Main account missing PIN values');
+        return res.status(500).json({ error: 'Main account PIN not properly configured' });
+      }
       
       // Wipe partner account personal data
       await wipeAccountDataBeforePartnerConversion(partnerAccountUid);
@@ -500,10 +519,12 @@ async function startServer() {
         mainAccountUid,
         accountType: 'partner',
         role: 'partner',
-        pinSalt, // Copy PIN from main account
+        pinSalt,        // Copy PIN from main account (now verified)
         pinVerifier,
         subscriptionTier: mainAccountData.subscriptionTier,
         language: mainAccountData.language || 'nl',
+        profileId: mainAccountData.profileId,
+        partnerId: mainAccountData.profileId || null,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       
@@ -514,15 +535,17 @@ async function startServer() {
         usedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       
-      // Log the partnership connection
+      // Log the partnership connection with verified account
       await logAuditEvent(partnerAccountUid, 'partner_device_connected', {
         mainAccountUid,
         connectionCode,
+        verificationMethod: 'password_verified_via_idtoken',
       }, req);
       
       await logAuditEvent(mainAccountUid, 'partner_device_link_confirmed', {
         partnerAccountUid,
         connectionCode,
+        verificationMethod: 'password_verified_via_idtoken',
       }, req);
       
       res.json({ 
@@ -532,7 +555,7 @@ async function startServer() {
       });
     } catch (e: any) {
       console.error('Partner device connection error:', e);
-      res.status(500).json({ error: 'Failed to connect as partner device' });
+      res.status(500).json({ error: 'Failed to connect as partner device. Please try again.' });
     }
   });
 

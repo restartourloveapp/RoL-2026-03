@@ -75,6 +75,8 @@ service cloud.firestore {
              (!('personalCoach' in data) || data.personalCoach == null || (data.personalCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
              (!('subscriptionTier' in data) || data.subscriptionTier == null || (data.subscriptionTier in ['free', 'premium'])) &&
              (!('language' in data) || data.language == null || (data.language in ['nl', 'en'])) &&
+             (!('profileId' in data) || data.profileId == null || (data.profileId is string && data.profileId.size() > 0 && data.profileId.size() <= 256)) &&
+             (!('partnerId' in data) || data.partnerId == null || (data.partnerId is string && data.partnerId.size() > 0 && data.partnerId.size() <= 256)) &&
              (!('createdAt' in data) || isValidDate(data.createdAt)) &&
              (!('updatedAt' in data) || isValidDate(data.updatedAt));
     }
