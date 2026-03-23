@@ -918,42 +918,62 @@ function MainApp() {
   };
 
   const handleSetupPin = async () => {
-    if (!user || pin.length < 4) return;
-
-    const salt = Encryption.generateSalt();
-    const derivedKek = await Encryption.deriveKEK(pin, salt);
-    const newCk = await Encryption.generateCK();
-    const wrappedCk = await Encryption.wrapKey(newCk, derivedKek);
-    const pinHash = await Encryption.hashPIN(pin, salt);
-
-    // Generate Exchange Key Pair
-    const exchangePair = await Encryption.generateExchangeKeyPair();
-    const pubKeyB64 = await Encryption.exportPublicKey(exchangePair.publicKey);
-    const wrappedPrivKey = await Encryption.exportPrivateKey(exchangePair.privateKey, derivedKek);
-
-    // Generate unique profile ID (independent of user account)
-    const profileId = crypto.randomUUID();
-    const partnerId = crypto.randomUUID(); // Unique ID for the partner person
-
-    const newProfile: UserProfile = {
-      uid: user.uid,
-      profileId,
-      partnerId,
-      email: user.email!,
-      displayName: user.displayName || 'Anonymous',
-      photoURL: user.photoURL || '',
-      pinSalt: Encryption.b64Encode(salt),
-      pinVerifier: pinHash,
-      wrappedCK: wrappedCk,
-      exchangePublicKey: pubKeyB64,
-      wrappedExchangePrivateKey: wrappedPrivKey,
-      subscriptionTier: 'free',
-      language: 'nl',
-      createdAt: serverTimestamp() as any,
-      updatedAt: serverTimestamp() as any
-    };
+    // ✅ SECURITY FIX: PIN strength validation
+    if (!user) return;
+    
+    // Enforce minimum PIN length of 6 digits
+    if (!pin || pin.length < 6) {
+      setAuthError('PIN must be at least 6 digits long');
+      return;
+    }
+    
+    // Verify PIN contains only digits (already filtered in input, but double-check)
+    if (!/^\d+$/.test(pin)) {
+      setAuthError('PIN must contain only digits');
+      return;
+    }
+    
+    // Warn if PIN is too weak (e.g., repeating digits like 111111)
+    const uniqueDigits = new Set(pin).size;
+    if (uniqueDigits === 1) {
+      setAuthError('PIN is too weak. Use different digits.');
+      return;
+    }
 
     try {
+      const salt = Encryption.generateSalt();
+      const derivedKek = await Encryption.deriveKEK(pin, salt);
+      const newCk = await Encryption.generateCK();
+      const wrappedCk = await Encryption.wrapKey(newCk, derivedKek);
+      const pinHash = await Encryption.hashPIN(pin, salt);
+
+      // Generate Exchange Key Pair
+      const exchangePair = await Encryption.generateExchangeKeyPair();
+      const pubKeyB64 = await Encryption.exportPublicKey(exchangePair.publicKey);
+      const wrappedPrivKey = await Encryption.exportPrivateKey(exchangePair.privateKey, derivedKek);
+
+      // Generate unique profile ID (independent of user account)
+      const profileId = crypto.randomUUID();
+      const partnerId = crypto.randomUUID(); // Unique ID for the partner person
+
+      const newProfile: UserProfile = {
+        uid: user.uid,
+        profileId,
+        partnerId,
+        email: user.email!,
+        displayName: user.displayName || 'Anonymous',
+        photoURL: user.photoURL || '',
+        pinSalt: Encryption.b64Encode(salt),
+        pinVerifier: pinHash,
+        wrappedCK: wrappedCk,
+        exchangePublicKey: pubKeyB64,
+        wrappedExchangePrivateKey: wrappedPrivKey,
+        subscriptionTier: 'free',
+        language: 'nl',
+        createdAt: serverTimestamp() as any,
+        updatedAt: serverTimestamp() as any
+      };
+
       await setDoc(doc(db, 'users', user.uid), newProfile);
       setProfile(newProfile);
       setKek(derivedKek);
@@ -2146,19 +2166,33 @@ function MainApp() {
           </div>
 
           <div className="space-y-6">
-            <input 
-              type="text"
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="••••••"
-              className="w-full text-center text-4xl tracking-widest py-4 bg-stone-50 border-2 border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none transition-colors"
-              style={{ WebkitTextSecurity: 'disc' } as any}
-            />
+            <div>
+              <input 
+                type="text"
+                inputMode="numeric"
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                placeholder="••••••"
+                className="w-full text-center text-4xl tracking-widest py-4 bg-stone-50 border-2 border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none transition-colors"
+                style={{ WebkitTextSecurity: 'disc' } as any}
+              />
+              {/* ✅ SECURITY FIX: Show PIN strength feedback */}
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <span className="text-stone-500">
+                  {pin.length}/6 {pin.length < 6 ? '(minimum 6 digits)' : ''}
+                </span>
+                {pin.length >= 6 && (
+                  <span className="text-emerald-600 flex items-center">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Strength: OK
+                  </span>
+                )}
+              </div>
+            </div>
             <button 
               onClick={profile ? handleVerifyPin : handleSetupPin}
-              disabled={pin.length < 4}
-              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all"
+              disabled={pin.length < 6}
+              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {profile ? t('auth.unlockButton') : t('auth.initButton')}
             </button>
