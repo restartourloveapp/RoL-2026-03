@@ -216,6 +216,7 @@ service cloud.firestore {
                       isValidSession(request.resource.data) &&
                       request.resource.data.ownerUid == resource.data.ownerUid &&
                       request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
 
       // Messages sub-collection
       match /messages/{messageId} {
