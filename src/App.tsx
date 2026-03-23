@@ -1314,9 +1314,8 @@ function MainApp() {
           createdAt: serverTimestamp()
         });
 
-        // Only save additional Timeline Entries and Homework for Premium users
+        // Only save additional Timeline Entries for Premium users
         if (isPremium) {
-          // ... (existing premium logic)
           if (result.timelineEntries && result.timelineEntries.length > 0) {
             for (const entry of result.timelineEntries) {
               if (!entry.title || !entry.description) continue;
@@ -1335,25 +1334,42 @@ function MainApp() {
               });
             }
           }
+        }
 
-          if (result.homework && result.homework.length > 0) {
-            for (const task of result.homework) {
-              if (!task.title || !task.description) continue;
-              const encryptedTitle = await Encryption.encryptText(task.title, activeSSK);
-              const encryptedDescription = await Encryption.encryptText(task.description, activeSSK);
-              await addDoc(collection(db, 'homework'), {
-                sessionId: activeSession.id,
-                ownerUid: user!.uid,
-                partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
-                title: encryptedTitle.ciphertext,
-                titleIv: encryptedTitle.iv,
-                description: encryptedDescription.ciphertext,
-                descriptionIv: encryptedDescription.iv,
-                status: 'assigned',
-                dueDate: task.dueDate ? new Date(task.dueDate) : null,
-                createdAt: serverTimestamp()
-              });
-            }
+        // Save Homework for ALL users (free & premium)
+        if (result.homework && result.homework.length > 0) {
+          for (const task of result.homework) {
+            if (!task.title || !task.description) continue;
+            const encryptedTitle = await Encryption.encryptText(task.title, activeSSK);
+            const encryptedDescription = await Encryption.encryptText(task.description, activeSSK);
+            await addDoc(collection(db, 'homework'), {
+              sessionId: activeSession.id,
+              ownerUid: user!.uid,
+              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+              title: encryptedTitle.ciphertext,
+              titleIv: encryptedTitle.iv,
+              description: encryptedDescription.ciphertext,
+              descriptionIv: encryptedDescription.iv,
+              status: 'assigned',
+              dueDate: task.dueDate ? new Date(task.dueDate) : null,
+              createdAt: serverTimestamp()
+            });
+
+            // Also save homework as a timeline entry
+            const homeworkTimelineTitle = language === 'nl' ? 'Huiswerkopdracht' : 'Homework Assignment';
+            const encryptedHWTimelineTitle = await Encryption.encryptText(`${homeworkTimelineTitle}: ${task.title}`, activeSSK);
+            const encryptedHWTimelineDesc = await Encryption.encryptText(task.description, activeSSK);
+            await addDoc(collection(db, 'timeline'), {
+              sessionId: activeSession.id,
+              ownerUid: user!.uid,
+              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+              type: 'insight',
+              title: encryptedHWTimelineTitle.ciphertext,
+              titleIv: encryptedHWTimelineTitle.iv,
+              description: encryptedHWTimelineDesc.ciphertext,
+              descriptionIv: encryptedHWTimelineDesc.iv,
+              createdAt: serverTimestamp()
+            });
           }
         }
 
@@ -1535,7 +1551,7 @@ function MainApp() {
           iv: encryptedSummary.iv
         };
 
-        // Auto-extract timeline entries and homework at checkpoints (Premium Only)
+        // Auto-extract timeline entries at checkpoints (Premium Only)
         if (isPremium) {
           if (result.timelineEntries && result.timelineEntries.length > 0) {
             for (const entry of result.timelineEntries) {
@@ -1555,25 +1571,42 @@ function MainApp() {
               });
             }
           }
+        }
 
-          if (result.homework && result.homework.length > 0) {
-            for (const task of result.homework) {
-              if (!task.title || !task.description) continue;
-              const encryptedTitle = await Encryption.encryptText(task.title, activeSSK);
-              const encryptedDescription = await Encryption.encryptText(task.description, activeSSK);
-              await addDoc(collection(db, 'homework'), {
-                sessionId: activeSession.id,
-                ownerUid: user!.uid,
-                partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
-                title: encryptedTitle.ciphertext,
-                titleIv: encryptedTitle.iv,
-                description: encryptedDescription.ciphertext,
-                descriptionIv: encryptedDescription.iv,
-                status: 'assigned',
-                dueDate: task.dueDate ? new Date(task.dueDate) : null,
-                createdAt: serverTimestamp()
-              });
-            }
+        // Auto-extract homework at checkpoints (ALL users)
+        if (result.homework && result.homework.length > 0) {
+          for (const task of result.homework) {
+            if (!task.title || !task.description) continue;
+            const encryptedTitle = await Encryption.encryptText(task.title, activeSSK);
+            const encryptedDescription = await Encryption.encryptText(task.description, activeSSK);
+            await addDoc(collection(db, 'homework'), {
+              sessionId: activeSession.id,
+              ownerUid: user!.uid,
+              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+              title: encryptedTitle.ciphertext,
+              titleIv: encryptedTitle.iv,
+              description: encryptedDescription.ciphertext,
+              descriptionIv: encryptedDescription.iv,
+              status: 'assigned',
+              dueDate: task.dueDate ? new Date(task.dueDate) : null,
+              createdAt: serverTimestamp()
+            });
+
+            // Also save homework as a timeline entry
+            const homeworkTimelineTitle = language === 'nl' ? 'Huiswerkopdracht' : 'Homework Assignment';
+            const encryptedHWTimelineTitle = await Encryption.encryptText(`${homeworkTimelineTitle}: ${task.title}`, activeSSK);
+            const encryptedHWTimelineDesc = await Encryption.encryptText(task.description, activeSSK);
+            await addDoc(collection(db, 'timeline'), {
+              sessionId: activeSession.id,
+              ownerUid: user!.uid,
+              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+              type: 'insight',
+              title: encryptedHWTimelineTitle.ciphertext,
+              titleIv: encryptedHWTimelineTitle.iv,
+              description: encryptedHWTimelineDesc.ciphertext,
+              descriptionIv: encryptedHWTimelineDesc.iv,
+              createdAt: serverTimestamp()
+            });
           }
         }
       }
