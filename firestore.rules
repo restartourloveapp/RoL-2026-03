@@ -3,348 +3,267 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================================================
-    // Helper Functions
+    // AUTHENTICATION HELPERS
     // ===============================================================
-    function isAuthenticated() {
+    
+    function isAuth() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function getAuth() {
+      return request.auth.uid;
     }
 
-    function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.ownerUid;
+    function isAuthUser(uid) {
+      return isAuth() && getAuth() == uid;
     }
 
     function isAdmin() {
-      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      return isAuthenticated() &&
-          (exists(userPath) && get(userPath).data.get('role', 'user') == 'admin');
-    }
-
-    function isSessionParticipant(sessionId) {
-      let sessionPath = /databases/$(database)/documents/sessions/$(sessionId);
-      return isAuthenticated() && exists(sessionPath) && (request.auth.uid == get(sessionPath).data.ownerUid || request.auth.uid == get(sessionPath).data.get('partnerUid', ''));
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
-    }
-
-    function isValidDate(date) {
-      return date is timestamp || (date is string && date.matches("^\\d{4}-\\d{2}-\\d{2}T.*"));
+      return isAuth() && get(/databases/$(database)/documents/users/$(getAuth())).data.get('role') == 'admin';
     }
 
     // ===============================================================
-    // Domain Validators
+    // DATA VALIDATION HELPERS
     // ===============================================================
-    function isValidUser(data) {
-      let allowedFields = [
-        'uid', 'email', 'displayName', 'photoURL', 'pinSalt', 'pinVerifier', 
-        'wrappedCK', 'exchangePublicKey', 'wrappedExchangePrivateKey', 
-        'wrappedRK', 'createdAt', 'updatedAt', 'partnerUid', 'partnerStatus', 'role',
-        'profileName', 'profilePronouns', 'partnerName', 'partnerPronouns', 'defaultCoupleCoach',
-        'subscriptionTier', 'language', 'mainAccountUid', 'accountType', 'personalCoach', 'profileId', 'partnerId'
-      ];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('uid' in data) || data.uid == request.auth.uid) &&
-             (!('email' in data) || (data.email is string && isValidEmail(data.email))) &&
-             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() <= 100)) &&
-             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1024)) &&
-             (!('pinVerifier' in data) || (data.pinVerifier is string && data.pinVerifier.size() > 0 && data.pinVerifier.size() <= 256)) &&
-             (!('pinSalt' in data) || (data.pinSalt is string && data.pinSalt.size() > 0 && data.pinSalt.size() <= 128)) &&
-             (!('wrappedCK' in data) || (data.wrappedCK is map && data.wrappedCK.ciphertext is string && data.wrappedCK.iv is string)) &&
-             (!('exchangePublicKey' in data) || data.exchangePublicKey == null || (data.exchangePublicKey is string && data.exchangePublicKey.size() <= 512)) &&
-             (!('wrappedExchangePrivateKey' in data) || data.wrappedExchangePrivateKey == null || (data.wrappedExchangePrivateKey is map && data.wrappedExchangePrivateKey.ciphertext is string && data.wrappedExchangePrivateKey.iv is string)) &&
-             (!('wrappedRK' in data) || data.wrappedRK == null || (data.wrappedRK is map && data.wrappedRK.ciphertext is string && data.wrappedRK.iv is string)) &&
-             (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
-             (!('mainAccountUid' in data) || data.mainAccountUid == null || (data.mainAccountUid is string && data.mainAccountUid.size() <= 128)) &&
-             (!('partnerStatus' in data) || data.partnerStatus == null || (data.partnerStatus in ['none', 'pending', 'linked'])) &&
-             (!('accountType' in data) || data.accountType == null || (data.accountType in ['owner', 'partner'])) &&
-             (!('role' in data) || data.role == null || (data.role in ['user', 'admin', 'partner'])) &&
-             (!('profileName' in data) || data.profileName == null || (data.profileName is map && data.profileName.ciphertext is string && data.profileName.iv is string)) &&
-             (!('profilePronouns' in data) || data.profilePronouns == null || (data.profilePronouns is map && data.profilePronouns.ciphertext is string && data.profilePronouns.iv is string)) &&
-             (!('partnerName' in data) || data.partnerName == null || (data.partnerName is map && data.partnerName.ciphertext is string && data.partnerName.iv is string)) &&
-             (!('partnerPronouns' in data) || data.partnerPronouns == null || (data.partnerPronouns is map && data.partnerPronouns.ciphertext is string && data.partnerPronouns.iv is string)) &&
-             (!('defaultCoupleCoach' in data) || data.defaultCoupleCoach == null || (data.defaultCoupleCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
-             (!('personalCoach' in data) || data.personalCoach == null || (data.personalCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
-             (!('subscriptionTier' in data) || data.subscriptionTier == null || (data.subscriptionTier in ['free', 'premium'])) &&
-             (!('language' in data) || data.language == null || (data.language in ['nl', 'en'])) &&
-             (!('profileId' in data) || data.profileId == null || (data.profileId is string && data.profileId.size() > 0 && data.profileId.size() <= 256)) &&
-             (!('partnerId' in data) || data.partnerId == null || (data.partnerId is string && data.partnerId.size() > 0 && data.partnerId.size() <= 256)) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt)) &&
-             (!('updatedAt' in data) || isValidDate(data.updatedAt));
+    
+    function isEmail(val) {
+      return val is string && 
+             val.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
     }
 
-    function isValidUserUpdate(data) {
-      // For updates, we're more lenient - only validate updatable fields
-      // Immutable fields (uid, email, pinVerifier, pinSalt, createdAt) should not be changed
-      return (!('email' in data) || (data.email is string && isValidEmail(data.email))) &&
-             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() <= 100)) &&
-             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1024)) &&
-             (!('exchangePublicKey' in data) || data.exchangePublicKey == null || (data.exchangePublicKey is string && data.exchangePublicKey.size() <= 512)) &&
-             (!('wrappedExchangePrivateKey' in data) || data.wrappedExchangePrivateKey == null || (data.wrappedExchangePrivateKey is map && data.wrappedExchangePrivateKey.ciphertext is string && data.wrappedExchangePrivateKey.iv is string)) &&
-             (!('wrappedRK' in data) || data.wrappedRK == null || (data.wrappedRK is map && data.wrappedRK.ciphertext is string && data.wrappedRK.iv is string)) &&
-             (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
-             (!('mainAccountUid' in data) || data.mainAccountUid == null || (data.mainAccountUid is string && data.mainAccountUid.size() <= 128)) &&
-             (!('partnerStatus' in data) || data.partnerStatus == null || (data.partnerStatus in ['none', 'pending', 'linked'])) &&
-             (!('accountType' in data) || data.accountType == null || (data.accountType in ['owner', 'partner'])) &&
-             (!('role' in data) || data.role == null || (data.role in ['user', 'admin', 'partner'])) &&
-             (!('profileName' in data) || data.profileName == null || (data.profileName is map && data.profileName.ciphertext is string && data.profileName.iv is string)) &&
-             (!('profilePronouns' in data) || data.profilePronouns == null || (data.profilePronouns is map && data.profilePronouns.ciphertext is string && data.profilePronouns.iv is string)) &&
-             (!('partnerName' in data) || data.partnerName == null || (data.partnerName is map && data.partnerName.ciphertext is string && data.partnerName.iv is string)) &&
-             (!('partnerPronouns' in data) || data.partnerPronouns == null || (data.partnerPronouns is map && data.partnerPronouns.ciphertext is string && data.partnerPronouns.iv is string)) &&
-             (!('defaultCoupleCoach' in data) || data.defaultCoupleCoach == null || (data.defaultCoupleCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
-             (!('personalCoach' in data) || data.personalCoach == null || (data.personalCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
-             (!('subscriptionTier' in data) || data.subscriptionTier == null || (data.subscriptionTier in ['free', 'premium'])) &&
-             (!('language' in data) || data.language == null || (data.language in ['nl', 'en'])) &&
-             (!('updatedAt' in data) || isValidDate(data.updatedAt));
+    function isTimestamp(val) {
+      return val is timestamp;
     }
 
-    function isValidSession(data) {
-      let allowedFields = [
-        'id', 'ownerUid', 'partnerUid', 'ownerProfileId', 'partnerProfileId', 'coachPersona', 'coachGender', 
-        'type', 'status', 'wrappedSSK', 'partnerWrappedSSK', 
-        'lastMessageAt', 'createdAt', 'endedAt', 'messageCount', 'lastCheckpointSummary', 'summary', 'summaryIv'
-      ];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('ownerUid' in data) || data.ownerUid is string) &&
-             (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
-             (!('ownerProfileId' in data) || (data.ownerProfileId is string && data.ownerProfileId.size() <= 128)) &&
-             (!('partnerProfileId' in data) || data.partnerProfileId == null || (data.partnerProfileId is string && data.partnerProfileId.size() <= 128)) &&
-             (!('coachPersona' in data) || data.coachPersona in ['Direct', 'Soft', 'Empathic', 'solin', 'kael', 'ravian', 'amari', 'leora']) &&
-             (!('coachGender' in data) || data.coachGender in ['male', 'female', 'Male', 'Female']) &&
-             (!('type' in data) || data.type in ['personal', 'couple']) &&
-             (!('status' in data) || data.status in ['active', 'archived', 'closed', 'summary_pending', 'beeindigd']) &&
-             (!('wrappedSSK' in data) || (data.wrappedSSK is map && data.wrappedSSK.ciphertext is string && data.wrappedSSK.iv is string)) &&
-             (!('partnerWrappedSSK' in data) || data.partnerWrappedSSK == null || (data.partnerWrappedSSK is map && data.partnerWrappedSSK.ciphertext is string && data.partnerWrappedSSK.iv is string)) &&
-             (!('messageCount' in data) || (data.messageCount is int && data.messageCount >= 0)) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt)) &&
-             (!('endedAt' in data) || data.endedAt == null || isValidDate(data.endedAt)) &&
-             (!('summary' in data) || data.summary == null || 
-               (data.summary is string && data.summary.size() <= 20000) || 
-               (data.summary is map && data.summary.ciphertext is string && data.summary.iv is string)) &&
-             (!('summaryIv' in data) || data.summaryIv == null || (data.summaryIv is string && data.summaryIv.size() <= 64));
+    function isString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
     }
 
-    function isValidMessage(data) {
-      let allowedFields = ['id', 'sessionId', 'senderUid', 'senderProfileId', 'content', 'iv', 'createdAt', 'role'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('sessionId' in data) || (data.sessionId is string && data.sessionId.size() <= 128)) &&
-             (!('senderUid' in data) || (data.senderUid is string && data.senderUid.size() <= 128)) &&
-             (!('senderProfileId' in data) || data.senderProfileId == null || (data.senderProfileId is string && data.senderProfileId.size() <= 128)) &&
-             (!('content' in data) || (data.content is string && data.content.size() > 0 && data.content.size() <= 10000)) &&
-             (!('iv' in data) || (data.iv is string && data.iv.size() <= 64)) &&
-             (!('role' in data) || data.role in ['user', 'assistant', 'system']) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt));
+    function isEncrypted(val) {
+      return val is map && 
+             'ciphertext' in val && val.ciphertext is string &&
+             'iv' in val && val.iv is string;
     }
 
-    function isValidTimelineEntry(data) {
-      let allowedFields = ['id', 'sessionId', 'ownerUid', 'partnerUid', 'title', 'titleIv', 'description', 'descriptionIv', 'type', 'createdAt'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('sessionId' in data) || data.sessionId is string) &&
-             (!('ownerUid' in data) || data.ownerUid == request.auth.uid) &&
-             (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
-             (!('title' in data) || (data.title is string && data.title.size() > 0 && data.title.size() <= 1000)) &&
-             (!('titleIv' in data) || (data.titleIv is string && data.titleIv.size() <= 64)) &&
-             (!('description' in data) || (data.description is string && data.description.size() > 0 && data.description.size() <= 10000)) &&
-             (!('descriptionIv' in data) || (data.descriptionIv is string && data.descriptionIv.size() <= 64)) &&
-             (!('type' in data) || data.type in ['milestone', 'insight', 'breakthrough']) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt));
-    }
-
-    function isValidHomework(data) {
-      let allowedFields = ['id', 'sessionId', 'ownerUid', 'partnerUid', 'title', 'titleIv', 'description', 'descriptionIv', 'status', 'dueDate', 'createdAt'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('sessionId' in data) || data.sessionId is string) &&
-             (!('ownerUid' in data) || data.ownerUid == request.auth.uid) &&
-             (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
-             (!('title' in data) || (data.title is string && data.title.size() > 0 && data.title.size() <= 1000)) &&
-             (!('titleIv' in data) || (data.titleIv is string && data.titleIv.size() <= 64)) &&
-             (!('description' in data) || (data.description is string && data.description.size() > 0 && data.description.size() <= 10000)) &&
-             (!('descriptionIv' in data) || (data.descriptionIv is string && data.descriptionIv.size() <= 64)) &&
-             (!('status' in data) || data.status in ['assigned', 'completed', 'skipped']) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt));
-    }
-
-    function isValidTicket(data) {
-      let allowedFields = ['id', 'userUid', 'subject', 'description', 'plaintextSnippet', 'fileUrl', 'status', 'createdAt'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('userUid' in data) || data.userUid == request.auth.uid) &&
-             (!('subject' in data) || (data.subject is string && data.subject.size() > 0 && data.subject.size() <= 200)) &&
-             (!('description' in data) || (data.description is string && data.description.size() > 0 && data.description.size() <= 2000)) &&
-             (!('plaintextSnippet' in data) || (data.plaintextSnippet is string && data.plaintextSnippet.size() <= 5000)) &&
-             (!('fileUrl' in data) || (data.fileUrl is string && data.fileUrl.size() <= 1024)) &&
-             (!('status' in data) || data.status in ['open', 'in_progress', 'resolved']) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt));
-    }
-
-    function isValidPartnerRequest(data) {
-      let allowedFields = ['fromUid', 'toEmail', 'status', 'createdAt'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('fromUid' in data) || data.fromUid is string) &&
-             (!('toEmail' in data) || isValidEmail(data.toEmail)) &&
-             (!('status' in data) || data.status in ['pending', 'accepted', 'rejected']) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt));
-    }
-
-    function isValidMessageSummary(data) {
-      let allowedFields = ['id', 'sessionId', 'startMessageIndex', 'endMessageIndex', 'ciphertext', 'iv', 'createdAt'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('sessionId' in data) || data.sessionId is string) &&
-             (!('startMessageIndex' in data) || data.startMessageIndex is int) &&
-             (!('endMessageIndex' in data) || data.endMessageIndex is int) &&
-             (!('ciphertext' in data) || (data.ciphertext is string && data.ciphertext.size() <= 10000)) &&
-             (!('iv' in data) || (data.iv is string && data.iv.size() <= 64)) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt));
-    }
-
-    function isValidSessionMetaSummary(data) {
-      let allowedFields = ['id', 'uid', 'ownerUid', 'partnerUid', 'sessionIds', 'startSessionIndex', 'endSessionIndex', 'ciphertext', 'iv', 'createdAt'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('uid' in data) || data.uid is string) &&
-             (!('ownerUid' in data) || data.ownerUid is string) &&
-             (!('partnerUid' in data) || data.partnerUid == null || data.partnerUid is string) &&
-             (!('sessionIds' in data) || data.sessionIds is list) &&
-             (!('startSessionIndex' in data) || data.startSessionIndex is int) &&
-             (!('endSessionIndex' in data) || data.endSessionIndex is int) &&
-             (!('ciphertext' in data) || (data.ciphertext is string && data.ciphertext.size() <= 20000)) &&
-             (!('iv' in data) || (data.iv is string && data.iv.size() <= 64)) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt));
-    }
-
-    // ✅ FEATURE: Partner Device Account - Connection codes validator
-    function isValidPartnerConnectionCode(data) {
-      let allowedFields = ['mainAccountUid', 'code', 'expiresAt', 'createdAt', 'used', 'partnerAccountUid', 'usedAt'];
-      return hasOnlyAllowedFields(allowedFields) &&
-             (!('mainAccountUid' in data) || (data.mainAccountUid is string && data.mainAccountUid.size() <= 128)) &&
-             (!('code' in data) || (data.code is string && data.code.size() == 6)) &&
-             (!('expiresAt' in data) || (data.expiresAt is timestamp)) &&
-             (!('createdAt' in data) || isValidDate(data.createdAt)) &&
-             (!('used' in data) || (data.used is bool)) &&
-             (!('partnerAccountUid' in data) || data.partnerAccountUid == null || (data.partnerAccountUid is string && data.partnerAccountUid.size() <= 128)) &&
-             (!('usedAt' in data) || data.usedAt == null || (data.usedAt is timestamp));
+    function isCoachName(val) {
+      return val in ['solin', 'kael', 'ravian', 'amari', 'leora'];
     }
 
     // ===============================================================
-    // Collection Rules
+    // COLLECTION RULES
     // ===============================================================
 
-    // Users collection
+    // 📱 USERS - Profile data
     match /users/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
-      allow create: if isOwner(uid) && isValidUser(request.resource.data) && 
-                      request.resource.data.keys().hasAll(['uid', 'email', 'pinVerifier', 'pinSalt', 'wrappedCK', 'createdAt']) &&
-                      (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin());
-      allow update: if isOwner(uid) && isValidUserUpdate(request.resource.data);
-
-      // Session Meta Summaries sub-collection
+      // Can read own profile or if admin
+      allow read: if isAuthUser(uid) || isAdmin();
+      
+      // Can create only own account with required fields
+      allow create: if isAuthUser(uid) && 
+                      request.resource.data.uid == uid &&
+                      isEmail(request.resource.data.email) &&
+                      isString(request.resource.data.pinVerifier, 10, 256) &&
+                      isString(request.resource.data.pinSalt, 10, 128) &&
+                      isEncrypted(request.resource.data.wrappedCK) &&
+                      isTimestamp(request.resource.data.createdAt);
+      
+      // Can update own profile (but not immutable fields)
+      allow update: if isAuthUser(uid) && 
+                      !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['uid', 'email', 'pinVerifier', 'pinSalt', 'wrappedCK', 'createdAt']);
+      
+      // Sub-collection: Session meta summaries
       match /session_meta_summaries/{summaryId} {
-        allow read: if isOwner(uid) || isAdmin();
-        allow create: if isOwner(uid) && isValidSessionMetaSummary(request.resource.data);
+        allow read: if isAuthUser(uid) || isAdmin();
+        allow create: if isAuthUser(uid) && 
+                        isEncrypted(request.resource.data) &&
+                        isTimestamp(request.resource.data.createdAt);
+        allow delete: if isAuthUser(uid) || isAdmin();
       }
     }
 
-    // Sessions collection
+    // 💬 SESSIONS - Chat sessions
     match /sessions/{sessionId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.ownerUid && isValidSession(request.resource.data);
-      allow update: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin()) &&
-                      isValidSession(request.resource.data) &&
-                      request.resource.data.ownerUid == resource.data.ownerUid &&
-                      request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
-
-      // Messages sub-collection
-      match /messages/{messageId} {
-        allow read: if isSessionParticipant(sessionId) || isAdmin();
-        allow create: if isSessionParticipant(sessionId) && isValidMessage(request.resource.data);
-        allow delete: if isSessionParticipant(sessionId) || isAdmin();
+      // Check if current user is session owner
+      function isSessionOwner() {
+        return isAuth() && getAuth() == resource.data.ownerUid;
       }
-
-      // Message Summaries sub-collection
+      
+      // Check if current user is session partner
+      function isSessionPartner() {
+        return isAuth() && getAuth() == resource.data.get('partnerUid');
+      }
+      
+      // Check if current user is member of session
+      function isSessionMemberHere() {
+        return isSessionOwner() || isSessionPartner() || isAdmin();
+      }
+      
+      allow read: if isAuth() && isSessionMemberHere();
+      
+      allow create: if isAuth() && 
+                      getAuth() == request.resource.data.ownerUid &&
+                      isString(request.resource.data.ownerProfileId, 1, 128) &&
+                      request.resource.data.type in ['personal', 'couple'] &&
+                      request.resource.data.status in ['active', 'archived', 'closed', 'summary_pending', 'beeindigd'] &&
+                      isEncrypted(request.resource.data.wrappedSSK) &&
+                      isTimestamp(request.resource.data.createdAt);
+      
+      allow update: if isAuth() && isSessionMemberHere() &&
+                      resource.data.ownerUid == request.resource.data.ownerUid &&
+                      resource.data.createdAt == request.resource.data.createdAt;
+      
+      allow delete: if isAuth() && (isSessionOwner() || isAdmin());
+      
+      // Sub-collection: Messages
+      match /messages/{messageId} {
+        allow read: if isAuth() && isSessionMemberHere();
+        allow create: if isAuth() && isSessionMemberHere() &&
+                         isString(request.resource.data.content, 1, 10000) &&
+                         request.resource.data.senderUid == getAuth() &&
+                         isTimestamp(request.resource.data.createdAt);
+        allow delete: if isAuth() && (isSessionOwner() || isAdmin());
+      }
+      
+      // Sub-collection: Message summaries
       match /message_summaries/{summaryId} {
-        allow read: if isSessionParticipant(sessionId) || isAdmin();
-        allow create: if isSessionParticipant(sessionId) && isValidMessageSummary(request.resource.data);
-        allow delete: if isSessionParticipant(sessionId) || isAdmin();
+        allow read: if isAuth() && isSessionMemberHere();
+        allow create: if isAuth() && isSessionMemberHere() &&
+                         isEncrypted(request.resource.data) &&
+                         request.resource.data.startMessageIndex is int &&
+                         request.resource.data.endMessageIndex is int &&
+                         isTimestamp(request.resource.data.createdAt);
+        allow delete: if isAuth() && (isSessionOwner() || isAdmin());
       }
     }
 
-    // Partner Requests collection
+    // 🤝 PARTNER REQUESTS
     match /partner_requests/{requestId} {
-      allow read: if isAuthenticated() && (
-                    request.auth.uid == resource.data.fromUid || 
-                    request.auth.uid == resource.data.acceptedByUid ||
+      allow read: if isAuth() && (
+                    getAuth() == resource.data.fromUid ||
                     request.auth.email == resource.data.toEmail ||
                     isAdmin()
                   );
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.fromUid && isValidPartnerRequest(request.resource.data);
-      allow update: if isAuthenticated() && (request.auth.uid == resource.data.fromUid || isAdmin()) &&
-                      isValidPartnerRequest(request.resource.data) &&
-                      request.resource.data.fromUid == resource.data.fromUid &&
-                      request.resource.data.createdAt == resource.data.createdAt;
+      
+      allow create: if isAuth() && 
+                      getAuth() == request.resource.data.fromUid &&
+                      isEmail(request.resource.data.toEmail) &&
+                      request.resource.data.status == 'pending' &&
+                      isTimestamp(request.resource.data.createdAt);
+      
+      allow update: if isAuth() && (getAuth() == resource.data.fromUid || isAdmin()) &&
+                      resource.data.fromUid == request.resource.data.fromUid &&
+                      resource.data.createdAt == request.resource.data.createdAt;
     }
 
-    // Partner Tokens collection - ✅ SECURITY FIX: Token-based partner request access
-    match /partnerTokens/{tokenId} {
-      allow read: if false; // Tokens are never read from client
-      allow create: if isAuthenticated(); // Created by server only via API
-      allow update: if isAuthenticated() && 
-                      (request.resource.data.get('used', false) == true && resource.data.get('used', false) == false); // Can only mark as used
-      allow delete: if isAdmin(); // Only admins can delete tokens
-    }
-
-    // Tickets collection
-    match /tickets/{ticketId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userUid || isAdmin());
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userUid && isValidTicket(request.resource.data);
-      allow update: if isAdmin() && isValidTicket(request.resource.data) &&
-                      request.resource.data.userUid == resource.data.userUid &&
-                      request.resource.data.createdAt == resource.data.createdAt;
-    }
-
-    // Timeline collection
+    // 📅 TIMELINE - Session milestones & insights
     match /timeline/{entryId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.ownerUid && isValidTimelineEntry(request.resource.data);
-      allow update: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin()) &&
-                      isValidTimelineEntry(request.resource.data) &&
-                      request.resource.data.ownerUid == resource.data.ownerUid &&
-                      request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
+      function isTimelineOwner() {
+        return isAuth() && getAuth() == resource.data.ownerUid;
+      }
+      
+      function isTimelinePartner() {
+        return isAuth() && getAuth() == resource.data.get('partnerUid');
+      }
+      
+      function isTimelineMember() {
+        return isTimelineOwner() || isTimelinePartner() || isAdmin();
+      }
+      
+      allow read: if isAuth() && isTimelineMember();
+      
+      allow create: if isAuth() &&
+                      getAuth() == request.resource.data.ownerUid &&
+                      isString(request.resource.data.title, 1, 1000) &&
+                      isString(request.resource.data.description, 1, 10000) &&
+                      request.resource.data.type in ['milestone', 'insight', 'breakthrough'] &&
+                      isTimestamp(request.resource.data.createdAt);
+      
+      allow update: if isAuth() && isTimelineMember() &&
+                      resource.data.ownerUid == request.resource.data.ownerUid &&
+                      resource.data.createdAt == request.resource.data.createdAt;
+      
+      allow delete: if isAuth() && (isTimelineOwner() || isTimelinePartner() || isAdmin());
     }
 
-    // Homework collection
-    match /homework/{homeworkId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.ownerUid && isValidHomework(request.resource.data);
-      allow update: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin()) && 
-                      isValidHomework(request.resource.data) &&
-                      request.resource.data.ownerUid == resource.data.ownerUid &&
-                      request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
+    // 📝 HOMEWORK - Assigned tasks
+    match /homework/{taskId} {
+      function isHomeworkOwner() {
+        return isAuth() && getAuth() == resource.data.ownerUid;
+      }
+      
+      function isHomeworkPartner() {
+        return isAuth() && getAuth() == resource.data.get('partnerUid');
+      }
+      
+      function isHomeworkMember() {
+        return isHomeworkOwner() || isHomeworkPartner() || isAdmin();
+      }
+      
+      allow read: if isAuth() && isHomeworkMember();
+      
+      allow create: if isAuth() &&
+                      getAuth() == request.resource.data.ownerUid &&
+                      isString(request.resource.data.title, 1, 1000) &&
+                      isString(request.resource.data.description, 1, 10000) &&
+                      request.resource.data.status in ['assigned', 'completed', 'skipped'] &&
+                      isTimestamp(request.resource.data.createdAt);
+      
+      allow update: if isAuth() && isHomeworkMember() &&
+                      resource.data.ownerUid == request.resource.data.ownerUid &&
+                      resource.data.createdAt == request.resource.data.createdAt;
+      
+      allow delete: if isAuth() && (isHomeworkOwner() || isHomeworkPartner() || isAdmin());
     }
 
-    // Crisis Resources collection
+    // 🎫 SUPPORT TICKETS - Admin support
+    match /tickets/{ticketId} {
+      allow read: if isAuth() && (getAuth() == resource.data.userUid || isAdmin());
+      
+      allow create: if isAuth() && 
+                      getAuth() == request.resource.data.userUid &&
+                      isString(request.resource.data.subject, 1, 200) &&
+                      isString(request.resource.data.description, 1, 2000) &&
+                      isTimestamp(request.resource.data.createdAt);
+      
+      allow update: if isAdmin() &&
+                      resource.data.userUid == request.resource.data.userUid &&
+                      resource.data.createdAt == request.resource.data.createdAt;
+      
+      allow delete: if isAdmin();
+    }
+
+    // 🆘 CRISIS RESOURCES - Public safety resources
     match /crisis_resources/{resourceId} {
       allow read: if true; // Publicly readable
-      allow write: if isAdmin(); // Only admins can add/update crisis resources
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // ✅ FEATURE: Partner Device Account - Connection codes collection
+    // 🔗 PARTNER TOKENS - Server-side token generation (NOT readable from client)
+    match /partnerTokens/{tokenId} {
+      allow read: if false;
+      allow create: if false; // Created by server API
+      allow update: if false; // Updated by server API
+      allow delete: if isAdmin();
+    }
+
+    // 🔐 PARTNER CONNECTION CODES - Server-side auth codes (NOT readable from client)
     match /partnerConnectionCodes/{codeId} {
-      allow read: if false; // Connection codes are never read from client - only validated on server
-      allow create: if false; // Created by server API only
-      allow update: if false; // Updated by server API only
-      allow delete: if isAdmin(); // Only admins can delete codes
+      allow read: if false;
+      allow create: if false; // Created by server API
+      allow update: if false; // Updated by server API
+      allow delete: if isAdmin();
     }
 
-    // Default deny
+    // 📋 AUDIT LOGS - Server-side logging (NOT writable from client)
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server can write
+    }
+
+    // DEFAULT DENY
     match /{path=**} {
       allow read, write: if false;
     }
