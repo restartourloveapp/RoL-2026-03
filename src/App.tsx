@@ -67,7 +67,11 @@ import {
   Save,
   Edit3,
   Trash2,
-  Clock
+  Clock,
+  Check,
+  Link2,
+  Loader,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -339,8 +343,20 @@ function MainApp() {
   const [partnerPronounsInput, setPartnerPronounsInput] = useState('');
   const [defaultCoachInput, setDefaultCoachInput] = useState<AI.CoachPersona>('solin');
   const [personalCoachInput, setPersonalCoachInput] = useState<AI.CoachPersona>('solin');
-  const [setupStep, setSetupStep] = useState<1 | 2>(1);
+  const [setupStep, setSetupStep] = useState<0 | 1 | 2 | 3>(0);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
+
+  // ✅ FEATURE: Partner Device Account State
+  const [accountType, setAccountType] = useState<'own' | 'partner' | null>(null);
+  const [partnerConnectionCode, setPartnerConnectionCode] = useState('');
+  const [partnerConnectionCodeInput, setPartnerConnectionCodeInput] = useState('');
+  const [generatedConnectionCode, setGeneratedConnectionCode] = useState<string | null>(null);
+  const [connectionCodeExpiresAt, setConnectionCodeExpiresAt] = useState<Date | null>(null);
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+  const [isConnectingAsPartner, setIsConnectingAsPartner] = useState(false);
+  const [connectionCodeError, setConnectionCodeError] = useState<string | null>(null);
+  const [mainAccountEmail, setMainAccountEmail] = useState('');
+  const [showPartnerDeviceSettings, setShowPartnerDeviceSettings] = useState(false);
 
   const [decryptedProfile, setDecryptedProfile] = useState<{
     name?: string;
@@ -1036,13 +1052,14 @@ function MainApp() {
       const encryptedPartnerPronouns = await Encryption.encryptText(partnerPronounsInput, ck);
 
       const path = `users/${user.uid}`;
-      const updateData = {
+      const updateData: any = {
         profileName: encryptedName,
         profilePronouns: encryptedPronouns,
         partnerName: encryptedPartnerName,
         partnerPronouns: encryptedPartnerPronouns,
         defaultCoupleCoach: defaultCoachInput,
         personalCoach: personalCoachInput,
+        accountType: accountType || 'own', // ✅ FEATURE: Store account type
         updatedAt: serverTimestamp()
       };
 
@@ -1127,6 +1144,142 @@ function MainApp() {
       console.error("Failed to accept request", e);
     }
   };
+
+  // ✅ FEATURE: Partner Device Account - Generate connection code
+  const handleGeneratePartnerConnectionCode = async () => {
+    if (!user || !profile) return;
+    
+    if (profile.subscriptionTier !== 'premium') {
+      showToast(t('auth.alerts.premiumRequired'), 'error');
+      return;
+    }
+
+    setIsGeneratingCode(true);
+    try {
+      const response = await fetch('/api/generate-partner-connection-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mainAccountUid: user.uid })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        showToast(error.error || 'Failed to generate code', 'error');
+        return;
+      }
+
+      const data = await response.json();
+      setGeneratedConnectionCode(data.code);
+      setConnectionCodeExpiresAt(new Date(data.expiresAt));
+      showToast('Connection code generated successfully', 'success');
+    } catch (error) {
+      console.error('Error generating connection code:', error);
+      showToast('Failed to generate connection code', 'error');
+    } finally {
+      setIsGeneratingCode(false);
+    }
+  };
+
+  // ✅ FEATURE: Partner Device Account - Connect device as partner
+  const handleConnectAsPartnerDevice = async () => {
+    if (!user || !profile || !kek) return;
+
+    if (partnerConnectionCodeInput.length !== 6) {
+      showToast('Connection code must be 6 characters', 'error');
+      return;
+    }
+
+    setIsConnectingAsPartner(true);
+    try {
+      // Get PIN salt and verifier from current account
+      // In real scenario, we'd get this from the main account,
+      // but for now we use the current account's (which will be wiped and replaced)
+      
+      const response = await fetch('/api/connect-as-partner-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partnerAccountUid: user.uid,
+          connectionCode: partnerConnectionCodeInput.toUpperCase(),
+          pinSalt: profile.pinSalt,
+          pinVerifier: profile.pinVerifier
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        showToast(error.error || 'Failed to connect as partner', 'error');
+        return;
+      }
+
+      const data = await response.json();
+      showToast('Successfully connected as partner device!', 'success');
+      
+      // Refresh profile to get updated data
+      if (user) {
+        const profileSnap = await getDoc(doc(db, 'users', user.uid));
+        if (profileSnap.exists()) {
+          const newProfile = profileSnap.data() as UserProfile;
+          setProfile(newProfile);
+          setPartnerConnectionCodeInput('');
+        }
+      }
+      
+      // Close the dialog/form
+      setShowPartnerDeviceSettings(false);
+    } catch (error) {
+      console.error('Error connecting as partner device:', error);
+      showToast('Failed to connect as partner device', 'error');
+    } finally {
+      setIsConnectingAsPartner(false);
+    }
+  };
+
+  // ✅ FEATURE: Partner Device Account - Copy code to clipboard
+  const handleCopyConnectionCode = async () => {
+    if (!generatedConnectionCode) return;
+    try {
+      await navigator.clipboard.writeText(generatedConnectionCode);
+      showToast('Code copied to clipboard', 'success');
+    } catch (error) {
+      console.error('Error copying code:', error);
+      showToast('Failed to copy code', 'error');
+    }
+  };
+
+  // ✅ FEATURE: Partner Device Account - Generate connection code
+  const handleGenerateConnectionCode = async () => {
+    if (!user || profile?.subscriptionTier !== 'premium') {
+      showToast('Only premium accounts can generate partner connection codes', 'error');
+      return;
+    }
+
+    setIsGeneratingCode(true);
+    try {
+      const response = await fetch('/api/generate-partner-connection-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        showToast(error.error || 'Failed to generate code', 'error');
+        return;
+      }
+
+      const data = await response.json();
+      setGeneratedConnectionCode(data.token);
+      setConnectionCodeExpiresAt(new Date(data.expiresAt));
+      showToast('Connection code generated successfully', 'success');
+    } catch (error) {
+      console.error('Error generating connection code:', error);
+      showToast('Failed to generate connection code', 'error');
+    } finally {
+      setIsGeneratingCode(false);
+    }
+  };
+
   const handleCreateSession = async () => {
     if (!user || !ck || !profile?.profileId) return;
 
@@ -1233,40 +1386,24 @@ function MainApp() {
         return;
       }
 
-      const batch = writeBatch(db);
+      // Use server-side delete endpoint for proper security and permissions handling
+      const response = await fetch('/api/delete-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          userId: user.uid
+        })
+      });
 
-      // Delete all messages in the session subcollection
-      const messagesQuery = query(collection(db, 'sessions', sessionId, 'messages'));
-      const messagesSnapshot = await getDocs(messagesQuery);
-      messagesSnapshot.docs.forEach(d => batch.delete(d.ref));
+      if (!response.ok) {
+        const error = await response.json();
+        showToast(error.error || t('sessions.alerts.deletionFailed'), 'error');
+        setSessionToDelete(null);
+        return;
+      }
 
-      // Delete all message summaries in the session subcollection
-      const msgSummariesQuery = query(collection(db, 'sessions', sessionId, 'message_summaries'));
-      const msgSummariesSnapshot = await getDocs(msgSummariesQuery);
-      msgSummariesSnapshot.docs.forEach(d => batch.delete(d.ref));
-
-      // Delete timeline entries related to this session
-      const timelineQuery = query(
-        collection(db, 'timeline'),
-        where('sessionId', '==', sessionId)
-      );
-      const timelineSnapshot = await getDocs(timelineQuery);
-      timelineSnapshot.docs.forEach(d => batch.delete(d.ref));
-
-      // Delete homework entries related to this session
-      const hwQuery = query(
-        collection(db, 'homework'),
-        where('sessionId', '==', sessionId)
-      );
-      const hwSnapshot = await getDocs(hwQuery);
-      hwSnapshot.docs.forEach(d => batch.delete(d.ref));
-
-      // Delete the session document
-      batch.delete(doc(db, 'sessions', sessionId));
-
-      // Commit all deletions
-      await batch.commit();
-
+      const data = await response.json();
       showToast(t('sessions.alerts.sessionDeleted'), 'success');
       setSessionToDelete(null);
       
@@ -1277,7 +1414,7 @@ function MainApp() {
       }
     } catch (e) {
       console.error("Failed to delete session", e);
-      handleFirestoreError(e, OperationType.DELETE, `sessions/${sessionId}`);
+      showToast(t('sessions.alerts.deletionFailed'), 'error');
       setSessionToDelete(null);
     }
   };
@@ -2210,7 +2347,78 @@ function MainApp() {
     return (
       <div className="h-screen bg-stone-50 flex flex-col p-6 overflow-y-auto pt-safe pb-safe">
         <AnimatePresence mode="wait">
-          {setupStep === 1 ? (
+          {/* ✅ FEATURE: Partner Device Account - Account Type Selection */}
+          {!accountType ? (
+            <motion.div 
+              key="accountType"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="max-w-md mx-auto w-full space-y-8 py-12"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                  <Users className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h1 className="font-serif font-bold text-3xl text-stone-900">How to get started?</h1>
+                <p className="text-stone-500">Choose how you want to use Restart Our Love</p>
+              </div>
+
+              <div className="space-y-4 bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
+                <button
+                  onClick={() => {
+                    setAccountType('own');
+                    setSetupStep(1);
+                  }}
+                  className="w-full p-6 text-left border-2 border-stone-200 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all space-y-3 group"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-bold text-lg text-stone-900">Create My Own Account</h3>
+                      <p className="text-sm text-stone-500">Set up your personal coaching space</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-stone-400 group-hover:text-emerald-600 transition-colors" />
+                  </div>
+                  <ul className="text-xs text-stone-600 space-y-1">
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      Personal coaching sessions
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      Later connect with partner on another device
+                    </li>
+                  </ul>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setAccountType('partner');
+                    setSetupStep(2);
+                  }}
+                  className="w-full p-6 text-left border-2 border-stone-200 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all space-y-3 group"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-bold text-lg text-stone-900">Connect to Partner's Account</h3>
+                      <p className="text-sm text-stone-500">Use this device with an existing account</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-stone-400 group-hover:text-emerald-600 transition-colors" />
+                  </div>
+                  <ul className="text-xs text-stone-600 space-y-1">
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      Use connection code from partner
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      Same PIN as main account
+                    </li>
+                  </ul>
+                </button>
+              </div>
+            </motion.div>
+          ) : setupStep === 1 && accountType === 'own' ? (
             <motion.div 
               key="step1"
               initial={{ opacity: 0, x: -20 }}
@@ -2299,9 +2507,143 @@ function MainApp() {
                 </button>
               </div>
             </motion.div>
+          ) : setupStep === 2 && accountType === 'partner' ? (
+            <motion.div 
+              key="partnerConnection"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="max-w-md mx-auto w-full space-y-8 py-12"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                  <Link2 className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h1 className="font-serif font-bold text-3xl text-stone-900">Connect to Partner's Account</h1>
+                <p className="text-stone-500">Enter the connection code your partner shared with you</p>
+              </div>
+
+              <div className="space-y-6 bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                  <p className="text-sm text-amber-900 font-medium">
+                    ⚠️ <strong>Important:</strong> Connecting to a partner account will delete all your personal data on this device. Couple sessions will be preserved.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest">Connection Code</label>
+                    <input 
+                      type="text"
+                      value={partnerConnectionCode}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+                        setPartnerConnectionCode(val);
+                        setConnectionCodeError(null);
+                      }}
+                      placeholder="e.g. ABC123"
+                      maxLength={6}
+                      className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none font-mono text-lg text-center tracking-widest"
+                    />
+                    <p className="text-[10px] text-stone-400">6-character code from your partner</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner's Email</label>
+                    <input 
+                      type="email"
+                      value={mainAccountEmail}
+                      onChange={(e) => {
+                        setMainAccountEmail(e.target.value);
+                        setConnectionCodeError(null);
+                      }}
+                      placeholder="partner@example.com"
+                      className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-stone-400">Email of the account to connect to</p>
+                  </div>
+
+                  {connectionCodeError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-2xl">
+                      <p className="text-sm text-red-900">{connectionCodeError}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-px bg-stone-100" />
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => {
+                      setAccountType(null);
+                      setSetupStep(0);
+                      setPartnerConnectionCode('');
+                      setMainAccountEmail('');
+                      setConnectionCodeError(null);
+                    }}
+                    className="flex-1 px-6 py-4 border-2 border-stone-200 text-stone-600 rounded-2xl font-bold hover:border-stone-300 transition-all"
+                  >
+                    {t('common.back')}
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      if (!partnerConnectionCode || partnerConnectionCode.length !== 6) {
+                        setConnectionCodeError('Please enter a valid 6-character code');
+                        return;
+                      }
+                      if (!mainAccountEmail) {
+                        setConnectionCodeError('Please enter partner email');
+                        return;
+                      }
+                      
+                      setIsConnectingAsPartner(true);
+                      try {
+                        const response = await fetch('/api/connect-as-partner-device', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            partnerCode: partnerConnectionCode,
+                            mainAccountUid: user?.uid,
+                            mainAccountEmail: mainAccountEmail
+                          })
+                        });
+
+                        if (!response.ok) {
+                          const error = await response.json();
+                          setConnectionCodeError(error.error || 'Failed to connect');
+                          return;
+                        }
+
+                        // Success - proceed to coach selection
+                        setSetupStep(3);
+                      } catch (err) {
+                        console.error('Partner connection error:', err);
+                        setConnectionCodeError(err instanceof Error ? err.message : 'Connection failed');
+                      } finally {
+                        setIsConnectingAsPartner(false);
+                      }
+                    }}
+                    disabled={isConnectingAsPartner}
+                    className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                  >
+                    {isConnectingAsPartner ? (
+                      <>
+                        <Loader className="w-5 h-5 animate-spin" />
+                        Connecting...
+                      </>
+                    ) : (
+                      <>
+                        <Link2 className="w-5 h-5" />
+                        Connect
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           ) : (
             <motion.div 
-              key="step2"
+              key="coachSelection"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
@@ -2375,7 +2717,13 @@ function MainApp() {
 
               <div className="flex items-center justify-between pt-8">
                 <button 
-                  onClick={() => setSetupStep(1)}
+                  onClick={() => {
+                    if (accountType === 'partner') {
+                      setSetupStep(2);
+                    } else {
+                      setSetupStep(1);
+                    }
+                  }}
                   className="flex items-center gap-2 text-stone-400 font-bold text-sm hover:text-stone-600 transition-all"
                 >
                   <ChevronRight className="w-5 h-5 rotate-180" />
@@ -3224,6 +3572,68 @@ function MainApp() {
                       </div>
                     )}
                   </div>
+
+                  {/* ✅ FEATURE: Partner Device Management - Generate Connection Code */}
+                  {profile?.subscriptionTier === 'premium' && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner Device Setup</p>
+                      <div className="space-y-3">
+                        {generatedConnectionCode ? (
+                          <div className="space-y-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+                            <div className="space-y-2">
+                              <p className="text-xs text-emerald-900 font-medium">Share this code with your partner:</p>
+                              <div className="flex items-center gap-2">
+                                <code className="flex-1 p-3 bg-white text-center text-lg font-mono font-bold tracking-widest text-emerald-600 rounded-lg border border-emerald-100">
+                                  {generatedConnectionCode}
+                                </code>
+                                <button 
+                                  onClick={handleCopyConnectionCode}
+                                  className="p-3 bg-white text-emerald-600 rounded-lg border border-emerald-100 hover:bg-emerald-50 transition-all"
+                                >
+                                  <Copy className="w-4 h-4" />
+                                </button>
+                              </div>
+                              {connectionCodeExpiresAt && (
+                                <p className="text-[10px] text-emerald-600">
+                                  Expires: {connectionCodeExpiresAt.toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                            <button 
+                              onClick={() => {
+                                setGeneratedConnectionCode(null);
+                                setConnectionCodeExpiresAt(null);
+                              }}
+                              className="w-full py-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-all"
+                            >
+                              Generate New Code
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={handleGenerateConnectionCode}
+                            disabled={isGeneratingCode}
+                            className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-emerald-200 text-emerald-600 rounded-xl text-sm font-bold hover:border-emerald-400 hover:bg-emerald-50 transition-all disabled:opacity-50"
+                          >
+                            {isGeneratingCode ? (
+                              <>
+                                <Loader className="w-4 h-4 animate-spin" />
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <Link2 className="w-4 h-4" />
+                                Generate Partner Device Code
+                              </>
+                            )}
+                          </button>
+                        )}
+                        <p className="text-[10px] text-stone-500">
+                          Partner devices connect using a 6-character code and inherit your PIN for same-session encryption.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

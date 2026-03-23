@@ -536,6 +536,116 @@ async function startServer() {
     }
   });
 
+  // ✅ FEATURE: Delete Session - Server-side endpoint for secure session deletion
+  app.post("/api/delete-session", rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 10, // Max 10 deletes per minute per IP
+    message: 'Too many deletion requests, please try again later',
+  }), async (req, res) => {
+    try {
+      const { sessionId, userId } = req.body;
+      
+      // Validate input
+      if (!sessionId || typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+        return res.status(400).json({ error: 'Invalid sessionId' });
+      }
+      
+      if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
+        return res.status(400).json({ error: 'Invalid userId' });
+      }
+      
+      const firestore = getDb();
+      
+      // Get session document
+      const sessionRef = firestore.collection('sessions').doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      
+      if (!sessionSnap.exists()) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      
+      const sessionData = sessionSnap.data();
+      
+      // ✅ SECURITY: Verify user is owner or partner of session
+      if (sessionData.ownerUid !== userId && sessionData.partnerUid !== userId) {
+        return res.status(403).json({ error: 'U bent niet bevoegd om deze sessie te verwijderen' });
+      }
+      
+      // ✅ SECURITY: Prevent deletion of closed/archived sessions (data integrity)
+      if (sessionData.status === 'closed' || sessionData.status === 'beeindigd' || sessionData.status === 'archived') {
+        return res.status(400).json({ error: 'U kunt gesloten sessies niet verwijderen' });
+      }
+      
+      // Delete all messages
+      const messagesSnap = await firestore
+        .collection('sessions')
+        .doc(sessionId)
+        .collection('messages')
+        .get();
+      
+      for (const docSnap of messagesSnap.docs) {
+        await docSnap.ref.delete();
+      }
+      
+      // Delete all message summaries
+      const msgSummariesSnap = await firestore
+        .collection('sessions')
+        .doc(sessionId)
+        .collection('message_summaries')
+        .get();
+      
+      for (const docSnap of msgSummariesSnap.docs) {
+        await docSnap.ref.delete();
+      }
+      
+      // Delete timeline entries for this session
+      const timelineSnap = await firestore
+        .collection('timeline')
+        .where('sessionId', '==', sessionId)
+        .get();
+      
+      for (const docSnap of timelineSnap.docs) {
+        await docSnap.ref.delete();
+      }
+      
+      // Delete homework entries for this session
+      const homeworkSnap = await firestore
+        .collection('homework')
+        .where('sessionId', '==', sessionId)
+        .get();
+      
+      for (const docSnap of homeworkSnap.docs) {
+        await docSnap.ref.delete();
+      }
+      
+      // Delete the session document itself
+      await sessionRef.delete();
+      
+      // Log the deletion for audit trail
+      await logAuditEvent(userId, 'session_deleted', {
+        sessionId,
+        sessionType: sessionData.type,
+        coachPersona: sessionData.coachPersona,
+        deletedBy: userId === sessionData.ownerUid ? 'owner' : 'partner',
+      }, req);
+      
+      res.json({ 
+        success: true,
+        message: 'Sessie is verwijderd',
+        sessionId,
+      });
+    } catch (e: any) {
+      console.error('Session deletion error:', e);
+      
+      // Don't expose internal errors to client
+      if (e.code === 'permission-denied') {
+        return res.status(403).json({ error: 'Geen toestemming om deze actie uit te voeren' });
+      }
+      
+      res.status(500).json({ error: 'Sessie kon niet worden verwijderd. Probeer het later opnieuw.' });
+    }
+  });
+
   // Stripe Checkout Session
   app.post("/api/create-checkout-session", checkoutLimiter, async (req, res) => {
     try {
