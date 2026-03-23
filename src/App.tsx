@@ -1811,7 +1811,7 @@ function MainApp() {
                 {t('auth.emailSentMessage')} {email}
               </div>
               <button 
-                onClick={() => { setIsEmailSent(false); signOut(auth); }}
+                onClick={() => { setIsEmailSent(false); setAuthMode('login'); signOut(auth); }}
                 className="w-full py-4 rounded-2xl font-medium text-stone-600 hover:bg-stone-100 transition-colors"
               >
                 {t('auth.backToLogin')}

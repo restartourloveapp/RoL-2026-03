@@ -58,7 +58,7 @@ export const translations = {
     auth: {
       loginTitle: "Restart Our Love",
       loginSubtitle: "Herstel verbinding, herbouw vertrouwen, herstart jullie liefde.",
-      loginButton: "Inloggen met Google",
+      loginButton: "Inloggen",
       pinTitle: "Voer je pincode in",
       pinSetupTitle: "Stel je beveiligingspincode in",
       pinSubtitle: "Je pincode wordt gebruikt om je berichten lokaal te ontsleutelen.",
