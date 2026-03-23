@@ -1496,9 +1496,9 @@ function MainApp() {
       const encrypted = await Encryption.encryptText(text, activeSSK);
 
       const senderUid = user!.uid; // Always save the user account owner
-      const senderProfileId = (activeSession.type === 'couple' && selectedSpeakerUid) 
-        ? selectedSpeakerUid 
-        : profile?.profileId;
+      // CRITICAL: Use the logged-in user's profileId, not AI's predicted speaker
+      // The person typing is defined by who is logged in, not by AI's nextSpeaker
+      const senderProfileId = profile?.profileId;
 
       await addDoc(collection(db, 'sessions', activeSession.id, 'messages'), {
         senderUid,
