@@ -212,7 +212,7 @@ service cloud.firestore {
 
     // Users collection
     match /users/{uid} {
-      allow read: if isOwner(uid) || isAdmin();
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
       allow create: if isOwner(uid) && isValidUser(request.resource.data) && 
                       request.resource.data.keys().hasAll(['uid', 'email', 'pinVerifier', 'pinSalt', 'wrappedCK', 'createdAt']) &&
                       (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin());

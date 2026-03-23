@@ -442,18 +442,28 @@ function MainApp() {
     let unsubscribeProfile: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
+      console.log("🔐 Auth state changed:", { uid: u?.uid, email: u?.email });
       setUser(u);
       if (u) {
         const docRef = doc(db, 'users', u.uid);
+        console.log("📖 Setting up Firestore listener for:", { path: `users/${u.uid}` });
         unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
+          console.log("📖 Firestore snapshot received:", { exists: docSnap.exists(), uid: u.uid });
           if (docSnap.exists()) {
             const data = docSnap.data() as UserProfile;
+            console.log("✅ User profile loaded:", { uid: data.uid, email: data.email });
             setProfile(data);
             if (data.language) setLanguage(data.language);
           } else {
+            console.warn("⚠️ User document does not exist:", { uid: u.uid });
             setProfile(null);
           }
         }, (error) => {
+          console.error("❌ Firestore read error:", {
+            code: (error as any).code,
+            message: error.message,
+            uid: u.uid
+          });
           handleFirestoreError(error, OperationType.GET, `users/${u.uid}`);
         });
       } else {
