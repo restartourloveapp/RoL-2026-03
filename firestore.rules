@@ -20,8 +20,7 @@ service cloud.firestore {
     function isAdmin() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       return isAuthenticated() &&
-          ((exists(userPath) && get(userPath).data.get('role', 'user') == 'admin') ||
-           (request.auth.token.email == "wouter.de.heer@hotmail.com" && request.auth.token.email_verified == true));
+          (exists(userPath) && get(userPath).data.get('role', 'user') == 'admin');
     }
 
     function isSessionParticipant(sessionId) {
