@@ -216,10 +216,18 @@ service cloud.firestore {
       allow create: if isOwner(uid) && isValidUser(request.resource.data) && 
                       request.resource.data.keys().hasAll(['uid', 'email', 'pinVerifier', 'pinSalt', 'wrappedCK', 'createdAt']) &&
                       (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin());
-      allow update: if isOwner(uid) && isValidUser(request.resource.data) &&
-                      request.resource.data.uid == resource.data.uid &&
-                      request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null) &&
-                      (request.resource.data.get('role', 'user') == resource.data.get('role', 'user') || isAdmin());
+      allow update: if isOwner(uid) && 
+                      resource.data.uid == uid &&
+                      (!('uid' in request.resource.data) || request.resource.data.uid == uid) &&
+                      (!('email' in request.resource.data) || (request.resource.data.email is string && isValidEmail(request.resource.data.email))) &&
+                      (!('profileName' in request.resource.data) || request.resource.data.profileName == null || (request.resource.data.profileName is map && request.resource.data.profileName.ciphertext is string && request.resource.data.profileName.iv is string)) &&
+                      (!('profilePronouns' in request.resource.data) || request.resource.data.profilePronouns == null || (request.resource.data.profilePronouns is map && request.resource.data.profilePronouns.ciphertext is string && request.resource.data.profilePronouns.iv is string)) &&
+                      (!('partnerName' in request.resource.data) || request.resource.data.partnerName == null || (request.resource.data.partnerName is map && request.resource.data.partnerName.ciphertext is string && request.resource.data.partnerName.iv is string)) &&
+                      (!('partnerPronouns' in request.resource.data) || request.resource.data.partnerPronouns == null || (request.resource.data.partnerPronouns is map && request.resource.data.partnerPronouns.ciphertext is string && request.resource.data.partnerPronouns.iv is string)) &&
+                      (!('defaultCoupleCoach' in request.resource.data) || request.resource.data.defaultCoupleCoach == null || (request.resource.data.defaultCoupleCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
+                      (!('personalCoach' in request.resource.data) || request.resource.data.personalCoach == null || (request.resource.data.personalCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
+                      (!('accountType' in request.resource.data) || request.resource.data.accountType == null || (request.resource.data.accountType in ['owner', 'partner'])) &&
+                      (!('language' in request.resource.data) || request.resource.data.language == null || (request.resource.data.language in ['nl', 'en']));
 
       // Session Meta Summaries sub-collection
       match /session_meta_summaries/{summaryId} {
