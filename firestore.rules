@@ -141,7 +141,7 @@ service cloud.firestore {
     match /partner_requests/{requestId} {
       allow read: if isAuth() && (
                     getAuth() == resource.data.fromUid ||
-                    request.auth.email == resource.data.toEmail ||
+                    request.auth.token.email == resource.data.toEmail ||
                     isAdmin()
                   );
       

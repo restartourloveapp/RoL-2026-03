@@ -3,6 +3,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   auth, db, storage
 } from './firebase';
+import AdminDashboard from './AdminDashboard';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -539,7 +540,7 @@ function MainApp() {
 
   // --- Partner Request Listener ---
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isPinVerified || isAdmin) return;
 
     const q = query(
       collection(db, 'partner_requests'),
@@ -555,7 +556,7 @@ function MainApp() {
     });
 
     return unsubscribe;
-  }, [user]);
+  }, [user, isPinVerified, isAdmin]);
 
   // --- RK Derivation for Sender ---
   useEffect(() => {
@@ -733,17 +734,8 @@ function MainApp() {
     };
   }, [user, isPinVerified, sessionKeys]);
 
-  // --- Admin Tickets Listener ---
-  useEffect(() => {
-    if (!isAdmin) return;
-
-    const q = query(collection(db, 'tickets'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (e) => handleFirestoreError(e, OperationType.LIST, 'tickets'));
-
-    return unsub;
-  }, [isAdmin]);
+  // --- Admin Tickets Listener (disabled - admin uses separate AdminDashboard) ---
+  // Tickets are now loaded in AdminDashboard.tsx
 
   // --- Crisis Resources Listener ---
   useEffect(() => {
@@ -2194,6 +2186,11 @@ function MainApp() {
 
   // --- Render Helpers ---
   if (!isAuthReady) return <div className="h-screen flex items-center justify-center bg-stone-50"><motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ repeat: Infinity }}><Heart className="w-12 h-12 text-emerald-500 fill-emerald-500" /></motion.div></div>;
+
+  // Admin users get a separate dashboard - no PIN, no user UI
+  if (user && isAdmin) {
+    return <AdminDashboard userEmail={user.email || ''} />;
+  }
 
   if (!user || (user.providerData.some(p => p.providerId === 'password') && !user.emailVerified)) {
     return (
