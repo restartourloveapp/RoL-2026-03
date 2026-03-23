@@ -992,6 +992,11 @@ function MainApp() {
         updatedAt: serverTimestamp() as any
       };
 
+      console.log('🔐 setupPin - User Auth:', { uid: user.uid, email: user.email });
+      console.log('🔐 setupPin - Profile to save:', newProfile);
+      console.log('🔐 setupPin - wrappedCK type:', typeof newProfile.wrappedCK, newProfile.wrappedCK);
+      console.log('🔐 setupPin - wrappedExchangePrivateKey type:', typeof newProfile.wrappedExchangePrivateKey, newProfile.wrappedExchangePrivateKey);
+
       await setDoc(doc(db, 'users', user.uid), newProfile);
       setProfile(newProfile);
       setKek(derivedKek);
