@@ -227,7 +227,8 @@ service cloud.firestore {
                       (!('defaultCoupleCoach' in request.resource.data) || request.resource.data.defaultCoupleCoach == null || (request.resource.data.defaultCoupleCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
                       (!('personalCoach' in request.resource.data) || request.resource.data.personalCoach == null || (request.resource.data.personalCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
                       (!('accountType' in request.resource.data) || request.resource.data.accountType == null || (request.resource.data.accountType in ['owner', 'partner'])) &&
-                      (!('language' in request.resource.data) || request.resource.data.language == null || (request.resource.data.language in ['nl', 'en']));
+                      (!('language' in request.resource.data) || request.resource.data.language == null || (request.resource.data.language in ['nl', 'en'])) &&
+                      (!('updatedAt' in request.resource.data) || isValidDate(request.resource.data.updatedAt));
 
       // Session Meta Summaries sub-collection
       match /session_meta_summaries/{summaryId} {
