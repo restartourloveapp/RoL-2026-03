@@ -1,10 +1,9 @@
 {
-  "projectId": "gen-lang-client-0045957411",
-  "appId": "1:1086546464909:web:7d87d8a978d64307b0d2c4",
-  "apiKey": "AIzaSyDED8L6a4K3aa2LGr4VAvQtMFGzhLm-aqM",
-  "authDomain": "gen-lang-client-0045957411.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-9c24102d-83c0-470f-9240-807af46e5cbb",
-  "storageBucket": "gen-lang-client-0045957411.firebasestorage.app",
-  "messagingSenderId": "1086546464909",
-  "measurementId": ""
+  "projectId": "rol-2026-test",
+  "appId": "1:66210783346:web:9c9bbdc645dd9c2e37e2eb",
+  "apiKey": "AIzaSyDrDhwhxbDOG7LfDZnOR52GygsLg4--WS4",
+  "authDomain": "rol-2026-test.firebaseapp.com",
+  "storageBucket": "rol-2026-test.firebasestorage.app",
+  "messagingSenderId": "66210783346",
+  "measurementId": "G-V9G9NFQFWC"
 }
