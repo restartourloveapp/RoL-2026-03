@@ -19,7 +19,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuth() && get(/databases/$(database)/documents/users/$(getAuth())).data.get('role') == 'admin';
+      return isAuth() && get(/databases/$(database)/documents/users/$(getAuth())).data.get('role', 'user') == 'admin';
     }
 
     // ===============================================================
@@ -91,7 +91,7 @@ service cloud.firestore {
       
       // Check if current user is session partner
       function isSessionPartner() {
-        return isAuth() && getAuth() == resource.data.get('partnerUid');
+        return isAuth() && getAuth() == resource.data.get('partnerUid', '');
       }
       
       // Check if current user is member of session
@@ -163,7 +163,7 @@ service cloud.firestore {
       }
       
       function isTimelinePartner() {
-        return isAuth() && getAuth() == resource.data.get('partnerUid');
+        return isAuth() && getAuth() == resource.data.get('partnerUid', '');
       }
       
       function isTimelineMember() {
@@ -193,7 +193,7 @@ service cloud.firestore {
       }
       
       function isHomeworkPartner() {
-        return isAuth() && getAuth() == resource.data.get('partnerUid');
+        return isAuth() && getAuth() == resource.data.get('partnerUid', '');
       }
       
       function isHomeworkMember() {
