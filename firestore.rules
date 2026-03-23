@@ -21,7 +21,7 @@ service cloud.firestore {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       return isAuthenticated() &&
           ((exists(userPath) && get(userPath).data.get('role', 'user') == 'admin') ||
-           (request.auth.token.email == "wouter.de.heer@gmail.com" && request.auth.token.email_verified == true));
+           (request.auth.token.email == "wouter.de.heer@hotmail.com" && request.auth.token.email_verified == true));
     }
 
     function isSessionParticipant(sessionId) {
@@ -272,6 +272,7 @@ service cloud.firestore {
     // Crisis Resources collection
     match /crisis_resources/{resourceId} {
       allow read: if true; // Publicly readable
+      allow write: if isAdmin(); // Only admins can add/update crisis resources
     }
 
     // Default deny
