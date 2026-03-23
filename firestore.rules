@@ -49,7 +49,7 @@ service cloud.firestore {
         'wrappedCK', 'exchangePublicKey', 'wrappedExchangePrivateKey', 
         'wrappedRK', 'createdAt', 'updatedAt', 'partnerUid', 'partnerStatus', 'role',
         'profileName', 'profilePronouns', 'partnerName', 'partnerPronouns', 'defaultCoupleCoach',
-        'subscriptionTier', 'language'
+        'subscriptionTier', 'language', 'mainAccountUid', 'accountType', 'personalCoach', 'profileId', 'partnerId'
       ];
       return hasOnlyAllowedFields(allowedFields) &&
              (!('uid' in data) || data.uid == request.auth.uid) &&
@@ -63,13 +63,16 @@ service cloud.firestore {
              (!('wrappedExchangePrivateKey' in data) || data.wrappedExchangePrivateKey == null || (data.wrappedExchangePrivateKey is map && data.wrappedExchangePrivateKey.ciphertext is string && data.wrappedExchangePrivateKey.iv is string)) &&
              (!('wrappedRK' in data) || data.wrappedRK == null || (data.wrappedRK is map && data.wrappedRK.ciphertext is string && data.wrappedRK.iv is string)) &&
              (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
+             (!('mainAccountUid' in data) || data.mainAccountUid == null || (data.mainAccountUid is string && data.mainAccountUid.size() <= 128)) &&
              (!('partnerStatus' in data) || data.partnerStatus == null || (data.partnerStatus in ['none', 'pending', 'linked'])) &&
-             (!('role' in data) || data.role == null || (data.role in ['user', 'admin'])) &&
+             (!('accountType' in data) || data.accountType == null || (data.accountType in ['owner', 'partner'])) &&
+             (!('role' in data) || data.role == null || (data.role in ['user', 'admin', 'partner'])) &&
              (!('profileName' in data) || data.profileName == null || (data.profileName is map && data.profileName.ciphertext is string && data.profileName.iv is string)) &&
              (!('profilePronouns' in data) || data.profilePronouns == null || (data.profilePronouns is map && data.profilePronouns.ciphertext is string && data.profilePronouns.iv is string)) &&
              (!('partnerName' in data) || data.partnerName == null || (data.partnerName is map && data.partnerName.ciphertext is string && data.partnerName.iv is string)) &&
              (!('partnerPronouns' in data) || data.partnerPronouns == null || (data.partnerPronouns is map && data.partnerPronouns.ciphertext is string && data.partnerPronouns.iv is string)) &&
              (!('defaultCoupleCoach' in data) || data.defaultCoupleCoach == null || (data.defaultCoupleCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
+             (!('personalCoach' in data) || data.personalCoach == null || (data.personalCoach in ['solin', 'kael', 'ravian', 'amari', 'leora'])) &&
              (!('subscriptionTier' in data) || data.subscriptionTier == null || (data.subscriptionTier in ['free', 'premium'])) &&
              (!('language' in data) || data.language == null || (data.language in ['nl', 'en'])) &&
              (!('createdAt' in data) || isValidDate(data.createdAt)) &&
@@ -188,6 +191,19 @@ service cloud.firestore {
              (!('createdAt' in data) || isValidDate(data.createdAt));
     }
 
+    // ✅ FEATURE: Partner Device Account - Connection codes validator
+    function isValidPartnerConnectionCode(data) {
+      let allowedFields = ['mainAccountUid', 'code', 'expiresAt', 'createdAt', 'used', 'partnerAccountUid', 'usedAt'];
+      return hasOnlyAllowedFields(allowedFields) &&
+             (!('mainAccountUid' in data) || (data.mainAccountUid is string && data.mainAccountUid.size() <= 128)) &&
+             (!('code' in data) || (data.code is string && data.code.size() == 6)) &&
+             (!('expiresAt' in data) || (data.expiresAt is timestamp)) &&
+             (!('createdAt' in data) || isValidDate(data.createdAt)) &&
+             (!('used' in data) || (data.used is bool)) &&
+             (!('partnerAccountUid' in data) || data.partnerAccountUid == null || (data.partnerAccountUid is string && data.partnerAccountUid.size() <= 128)) &&
+             (!('usedAt' in data) || data.usedAt == null || (data.usedAt is timestamp));
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -289,6 +305,14 @@ service cloud.firestore {
     match /crisis_resources/{resourceId} {
       allow read: if true; // Publicly readable
       allow write: if isAdmin(); // Only admins can add/update crisis resources
+    }
+
+    // ✅ FEATURE: Partner Device Account - Connection codes collection
+    match /partnerConnectionCodes/{codeId} {
+      allow read: if false; // Connection codes are never read from client - only validated on server
+      allow create: if false; // Created by server API only
+      allow update: if false; // Updated by server API only
+      allow delete: if isAdmin(); // Only admins can delete codes
     }
 
     // Default deny

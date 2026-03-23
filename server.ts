@@ -65,6 +65,84 @@ function generatePartnerToken(): { token: string; expiresAt: Date } {
   return { token, expiresAt };
 }
 
+// ✅ FEATURE: Partner Device Account - Generate connection code
+function generatePartnerConnectionCode(): { code: string; expiresAt: Date } {
+  // Generate a 6-character alphanumeric code (easy to share, case-insensitive)
+  const code = crypto.randomBytes(3).toString('hex').toUpperCase().substring(0, 6);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  return { code, expiresAt };
+}
+
+// ✅ FEATURE: Partner Device Account - Validate main account is premium
+async function validateMainAccountPremium(mainAccountUid: string): Promise<boolean> {
+  try {
+    const firestore = getDb();
+    const userSnap = await firestore.collection('users').doc(mainAccountUid).get();
+    if (!userSnap.exists()) return false;
+    
+    const userData = userSnap.data();
+    return userData?.subscriptionTier === 'premium';
+  } catch (error) {
+    console.error('Error validating main account premium status:', error);
+    return false;
+  }
+}
+
+// ✅ FEATURE: Partner Device Account - Wipe account data before converting to partner
+async function wipeAccountDataBeforePartnerConversion(userId: string): Promise<void> {
+  try {
+    const firestore = getDb();
+    
+    // Get all sessions owned by this user
+    const sessionsSnap = await firestore.collection('sessions')
+      .where('ownerUid', '==', userId)
+      .get();
+    
+    // Delete all messages and summaries from personal sessions
+    for (const sessionDoc of sessionsSnap.docs) {
+      const session = sessionDoc.data();
+      // Only delete personal sessions (not couple sessions)
+      if (session.type === 'personal') {
+        // Delete messages
+        const messagesSnap = await sessionDoc.ref.collection('messages').get();
+        for (const msgDoc of messagesSnap.docs) {
+          await msgDoc.ref.delete();
+        }
+        
+        // Delete message summaries
+        const summariesSnap = await sessionDoc.ref.collection('message_summaries').get();
+        for (const sumDoc of summariesSnap.docs) {
+          await sumDoc.ref.delete();
+        }
+        
+        // Delete the session itself
+        await sessionDoc.ref.delete();
+      }
+    }
+    
+    // Delete personal timeline entries
+    const timelineSnap = await firestore.collection('timeline')
+      .where('ownerUid', '==', userId)
+      .get();
+    for (const timelineDoc of timelineSnap.docs) {
+      await timelineDoc.ref.delete();
+    }
+    
+    // Delete homework
+    const homeworkSnap = await firestore.collection('homework')
+      .where('ownerUid', '==', userId)
+      .get();
+    for (const hwDoc of homeworkSnap.docs) {
+      await hwDoc.ref.delete();
+    }
+    
+    console.log(`Wiped personal data for user ${userId}`);
+  } catch (error) {
+    console.error('Error wiping account data:', error);
+    throw error;
+  }
+}
+
 function getDb() {
   if (!db) {
     if (admin.apps.length === 0) {
@@ -296,6 +374,165 @@ async function startServer() {
     } catch (e: any) {
       console.error('Partner token generation error:', e);
       res.status(500).json({ error: 'Failed to generate partner token' });
+    }
+  });
+
+  // ✅ FEATURE: Partner Device Account - Generate connection code
+  app.post("/api/generate-partner-connection-code", rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5, // Max 5 codes per hour
+    message: 'Too many connection codes generated, please try again later',
+  }), async (req, res) => {
+    try {
+      const { mainAccountUid } = req.body;
+      
+      if (!mainAccountUid || typeof mainAccountUid !== 'string' || mainAccountUid.trim().length === 0) {
+        return res.status(400).json({ error: 'Invalid mainAccountUid' });
+      }
+      
+      // Verify main account is premium
+      const isPremium = await validateMainAccountPremium(mainAccountUid);
+      if (!isPremium) {
+        return res.status(403).json({ error: 'Main account must be premium to create partner accounts' });
+      }
+      
+      const firestore = getDb();
+      const { code, expiresAt } = generatePartnerConnectionCode();
+      
+      // Store connection code in Firestore
+      await firestore.collection('partnerConnectionCodes').add({
+        mainAccountUid,
+        code,
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        used: false,
+        partnerAccountUid: null, // Will be set when partner connects
+      });
+      
+      // Log the code generation
+      await logAuditEvent(mainAccountUid, 'partner_connection_code_generated', {
+        code,
+        expiresAt,
+      }, req);
+      
+      res.json({ 
+        code,
+        expiresAt,
+        message: 'Share this code with your partner to connect their device',
+      });
+    } catch (e: any) {
+      console.error('Partner connection code generation error:', e);
+      res.status(500).json({ error: 'Failed to generate connection code' });
+    }
+  });
+
+  // ✅ FEATURE: Partner Device Account - Connect as partner device
+  app.post("/api/connect-as-partner-device", async (req, res) => {
+    try {
+      const { partnerAccountUid, connectionCode, pinSalt, pinVerifier } = req.body;
+      
+      // Validate input
+      if (!partnerAccountUid || typeof partnerAccountUid !== 'string') {
+        return res.status(400).json({ error: 'Invalid partnerAccountUid' });
+      }
+      
+      if (!connectionCode || typeof connectionCode !== 'string' || connectionCode.trim().length !== 6) {
+        return res.status(400).json({ error: 'Invalid connection code' });
+      }
+      
+      if (!pinSalt || typeof pinSalt !== 'string') {
+        return res.status(400).json({ error: 'Missing pinSalt from main account' });
+      }
+      
+      if (!pinVerifier || typeof pinVerifier !== 'string') {
+        return res.status(400).json({ error: 'Missing pinVerifier from main account' });
+      }
+      
+      const firestore = getDb();
+      
+      // Find and validate connection code
+      const codesSnap = await firestore.collection('partnerConnectionCodes')
+        .where('code', '==', connectionCode.toUpperCase())
+        .limit(1)
+        .get();
+      
+      if (codesSnap.empty) {
+        return res.status(404).json({ error: 'Connection code not found' });
+      }
+      
+      const codeDoc = codesSnap.docs[0];
+      const codeData = codeDoc.data();
+      
+      // Validate code hasn't expired
+      const expiresAt = codeData.expiresAt.toDate();
+      if (expiresAt < new Date()) {
+        return res.status(410).json({ error: 'Connection code has expired' });
+      }
+      
+      // Validate code hasn't been used
+      if (codeData.used) {
+        return res.status(409).json({ error: 'Connection code has already been used' });
+      }
+      
+      const mainAccountUid = codeData.mainAccountUid;
+      
+      // Get main account profile
+      const mainAccountSnap = await firestore.collection('users').doc(mainAccountUid).get();
+      if (!mainAccountSnap.exists()) {
+        return res.status(404).json({ error: 'Main account not found' });
+      }
+      
+      const mainAccountData = mainAccountSnap.data();
+      
+      // Verify main account is premium
+      if (mainAccountData.subscriptionTier !== 'premium') {
+        return res.status(403).json({ error: 'Main account must be premium' });
+      }
+      
+      // Move personal sessions from partner account to new account context
+      // (In the frontend, this will be handled by creating new sessions with moved history)
+      
+      // Wipe partner account personal data
+      await wipeAccountDataBeforePartnerConversion(partnerAccountUid);
+      
+      // Update partner account with base info from main account and make it a partner account
+      await firestore.collection('users').doc(partnerAccountUid).update({
+        mainAccountUid,
+        accountType: 'partner',
+        role: 'partner',
+        pinSalt, // Copy PIN from main account
+        pinVerifier,
+        subscriptionTier: mainAccountData.subscriptionTier,
+        language: mainAccountData.language || 'nl',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      // Mark code as used
+      await codeDoc.ref.update({
+        used: true,
+        partnerAccountUid,
+        usedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      // Log the partnership connection
+      await logAuditEvent(partnerAccountUid, 'partner_device_connected', {
+        mainAccountUid,
+        connectionCode,
+      }, req);
+      
+      await logAuditEvent(mainAccountUid, 'partner_device_link_confirmed', {
+        partnerAccountUid,
+        connectionCode,
+      }, req);
+      
+      res.json({ 
+        success: true,
+        message: 'Successfully connected as partner device account',
+        mainAccountUid,
+      });
+    } catch (e: any) {
+      console.error('Partner device connection error:', e);
+      res.status(500).json({ error: 'Failed to connect as partner device' });
     }
   });
 
