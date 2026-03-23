@@ -1627,58 +1627,127 @@ function MainApp() {
       }
 
       // 2. Get Recent Session Summaries (last 10)
-      const sessionsQuery = query(
+      // Split into two queries to avoid OR index issues
+      const ownerSessionsQuery = query(
         collection(db, 'sessions'),
-        or(where('ownerUid', '==', user!.uid), where('partnerUid', '==', user!.uid)),
+        where('ownerUid', '==', user!.uid),
         orderBy('createdAt', 'desc'),
-        limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1) // +1 to exclude current
+        limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
       );
-      const sessionsSnap = await getDocs(sessionsQuery);
-      for (const d of sessionsSnap.docs) {
-        if (d.id === activeSession.id) continue;
-        const data = d.data();
-        if (data.summary) {
-          try {
-            // We need the SSK for that session... this is tricky because SSK is wrapped per user.
-            // For simplicity in this context, we assume the user can unwrap it if they have the CK.
-            // But wait, we don't have the wrappedSSK for other sessions easily available here without fetching them.
-            // Actually, we have the session data.
-            const wrappedSSK = data.ownerUid === user!.uid ? data.wrappedSSK : data.partnerWrappedSSK;
-            if (wrappedSSK && ck) {
-              const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
-              const dec = await Encryption.decryptText({ ciphertext: data.summary.ciphertext, iv: data.summary.iv }, ssk);
-              contextData.sessionSummaries.push(dec);
-            }
-          } catch (e) { console.error("Failed to decrypt session summary", e); }
+      const partnerSessionsQuery = query(
+        collection(db, 'sessions'),
+        where('partnerUid', '==', user!.uid),
+        orderBy('createdAt', 'desc'),
+        limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
+      );
+
+      const [ownerSnap, partnerSnap] = await Promise.all([
+        getDocs(ownerSessionsQuery),
+        getDocs(partnerSessionsQuery)
+      ]);
+
+      // Combine and deduplicate
+      const allSessions = new Map<string, any>();
+      ownerSnap.docs.forEach(d => allSessions.set(d.id, d.data()));
+      partnerSnap.docs.forEach(d => allSessions.set(d.id, d.data()));
+
+      // Sort by createdAt and limit
+      const sortedSessions = Array.from(allSessions.entries())
+        .sort((a, b) => {
+          const timeA = a[1].createdAt?.toMillis?.() || 0;
+          const timeB = b[1].createdAt?.toMillis?.() || 0;
+          return timeB - timeA;
+        })
+        .slice(0, AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1);
+
+      for (const [sessionId, data] of sortedSessions) {
+        if (sessionId === activeSession.id) continue;
+        
+        // Only process sessions with summaries
+        if (!data.summary || !data.summary.ciphertext) {
+          console.debug(`[Context] Session ${sessionId.slice(0, 6)}... has no summary, skipping`);
+          continue;
+        }
+
+        try {
+          const wrappedSSK = data.ownerUid === user!.uid ? data.wrappedSSK : data.partnerWrappedSSK;
+          if (!wrappedSSK) {
+            console.warn(`[Context] No wrapped SSK found for session ${sessionId.slice(0, 6)}...`);
+            continue;
+          }
+          if (!ck) {
+            console.warn(`[Context] No client key available for decryption`);
+            continue;
+          }
+
+          const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
+          const dec = await Encryption.decryptText(
+            { ciphertext: data.summary.ciphertext, iv: data.summary.iv },
+            ssk
+          );
+          contextData.sessionSummaries.push(dec);
+          console.debug(`[Context] ✓ Loaded summary from session ${sessionId.slice(0, 6)}...`);
+        } catch (e) {
+          console.error(`[Context] Failed to decrypt session summary for ${sessionId.slice(0, 6)}...`, e);
         }
       }
 
       // 3. Get Shared Personal Summaries (last 3) - only for couple sessions
       if (activeSession.type === 'couple') {
-        const sharedQuery = query(
+        // Similarly split into two queries
+        const personalOwnerQuery = query(
           collection(db, 'sessions'),
-          and(
-            where('type', '==', 'personal'),
-            or(where('ownerUid', '==', user!.uid), where('partnerUid', '==', user!.uid)),
-            where('status', 'in', ['archived', 'beeindigd']) // Assuming shared means archived or has a flag
-          ),
+          where('type', '==', 'personal'),
+          where('ownerUid', '==', user!.uid),
+          where('status', 'in', ['archived', 'beeindigd']),
           orderBy('createdAt', 'desc'),
           limit(AI_CONFIG.MAX_SHARED_PERSONAL_SUMMARIES)
         );
-        // Note: In a real app, we'd need a 'sharedWithPartner' flag. 
-        // For now, we'll assume archived personal sessions are shared if they are in the timeline.
-        const sharedSnap = await getDocs(sharedQuery);
-        for (const d of sharedSnap.docs) {
-          const data = d.data();
-          if (data.summary) {
-            try {
-              const wrappedSSK = data.ownerUid === user!.uid ? data.wrappedSSK : data.partnerWrappedSSK;
-              if (wrappedSSK && ck) {
-                const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
-                const dec = await Encryption.decryptText({ ciphertext: data.summary.ciphertext, iv: data.summary.iv }, ssk);
-                contextData.sharedPersonalSummaries.push(dec);
-              }
-            } catch (e) { console.error("Failed to decrypt shared summary", e); }
+        const personalPartnerQuery = query(
+          collection(db, 'sessions'),
+          where('type', '==', 'personal'),
+          where('partnerUid', '==', user!.uid),
+          where('status', 'in', ['archived', 'beeindigd']),
+          orderBy('createdAt', 'desc'),
+          limit(AI_CONFIG.MAX_SHARED_PERSONAL_SUMMARIES)
+        );
+
+        const [personalOwnerSnap, personalPartnerSnap] = await Promise.all([
+          getDocs(personalOwnerQuery),
+          getDocs(personalPartnerQuery)
+        ]);
+
+        const personalSessions = new Map<string, any>();
+        personalOwnerSnap.docs.forEach(d => personalSessions.set(d.id, d.data()));
+        personalPartnerSnap.docs.forEach(d => personalSessions.set(d.id, d.data()));
+
+        const sortedPersonal = Array.from(personalSessions.entries())
+          .sort((a, b) => {
+            const timeA = a[1].createdAt?.toMillis?.() || 0;
+            const timeB = b[1].createdAt?.toMillis?.() || 0;
+            return timeB - timeA;
+          })
+          .slice(0, AI_CONFIG.MAX_SHARED_PERSONAL_SUMMARIES);
+
+        for (const [sessionId, data] of sortedPersonal) {
+          if (!data.summary || !data.summary.ciphertext) {
+            console.debug(`[Context] Personal session ${sessionId.slice(0, 6)}... has no summary`);
+            continue;
+          }
+
+          try {
+            const wrappedSSK = data.ownerUid === user!.uid ? data.wrappedSSK : data.partnerWrappedSSK;
+            if (!wrappedSSK || !ck) continue;
+
+            const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
+            const dec = await Encryption.decryptText(
+              { ciphertext: data.summary.ciphertext, iv: data.summary.iv },
+              ssk
+            );
+            contextData.sharedPersonalSummaries.push(dec);
+            console.debug(`[Context] ✓ Loaded personal summary from ${sessionId.slice(0, 6)}...`);
+          } catch (e) {
+            console.error(`[Context] Failed to decrypt personal summary`, e);
           }
         }
       }
@@ -1698,34 +1767,70 @@ function MainApp() {
       }
 
       // 5. Get Pending Homework (all unfinished homework for follow-up check)
-      const hwSnap = await getDocs(query(
+      console.debug(`[Context] Fetching pending homework for user ${user!.uid.slice(0, 6)}...`);
+      
+      // Get homework where current user is owner
+      const hwOwnerSnap = await getDocs(query(
         collection(db, 'homework'),
         where('ownerUid', '==', user!.uid),
         where('status', '==', 'assigned'),
         orderBy('createdAt', 'desc'),
         limit(10)
       ));
+      
+      // Get homework where current user is partner (shared homework)
+      const hwPartnerSnap = await getDocs(query(
+        collection(db, 'homework'),
+        where('partnerUid', '==', user!.uid),
+        where('status', '==', 'assigned'),
+        orderBy('createdAt', 'desc'),
+        limit(10)
+      ));
+      
       const pendingHomework: Array<{ title: string; description: string; dueDate?: string }> = [];
-      for (const hwDoc of hwSnap.docs) {
+      const hwDocs = [...hwOwnerSnap.docs, ...hwPartnerSnap.docs];
+      
+      console.debug(`[Context] Found ${hwDocs.length} pending homework items`);
+      
+      for (const hwDoc of hwDocs) {
         const data = hwDoc.data();
         try {
           const hwSessionDoc = await getDoc(doc(db, 'sessions', data.sessionId));
-          if (hwSessionDoc.exists()) {
-            const hwSessionData = hwSessionDoc.data();
-            const wrappedSSK = hwSessionData.ownerUid === user!.uid ? hwSessionData.wrappedSSK : hwSessionData.partnerWrappedSSK;
-            if (wrappedSSK && ck) {
-              const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
-              const title = await Encryption.decryptText({ ciphertext: data.title, iv: data.titleIv }, ssk);
-              const desc = await Encryption.decryptText({ ciphertext: data.description, iv: data.descriptionIv }, ssk);
-              pendingHomework.push({
-                title,
-                description: desc,
-                dueDate: data.dueDate?.toDate?.().toISOString()
-              });
-            }
+          if (!hwSessionDoc.exists()) {
+            console.warn(`[Context] Homework references non-existent session ${data.sessionId.slice(0, 6)}...`);
+            continue;
           }
-        } catch (e) { console.error("Failed to decrypt homework", e); }
+          
+          const hwSessionData = hwSessionDoc.data();
+          const wrappedSSK = hwSessionData.ownerUid === user!.uid ? hwSessionData.wrappedSSK : hwSessionData.partnerWrappedSSK;
+          
+          if (!wrappedSSK) {
+            console.warn(`[Context] No wrapped SSK for homework in session ${data.sessionId.slice(0, 6)}...`);
+            continue;
+          }
+          if (!ck) {
+            console.warn(`[Context] No client key available for homework decryption`);
+            continue;
+          }
+          
+          const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
+          const title = await Encryption.decryptText({ ciphertext: data.title, iv: data.titleIv }, ssk);
+          const desc = await Encryption.decryptText({ ciphertext: data.description, iv: data.descriptionIv }, ssk);
+          
+          pendingHomework.push({
+            title,
+            description: desc,
+            dueDate: data.dueDate?.toDate?.().toISOString()
+          });
+          
+          console.debug(`[Context] ✓ Loaded homework: "${title}"`);
+        } catch (e) {
+          console.error(`[Context] Failed to decrypt homework from session ${data.sessionId.slice(0, 6)}...`, e);
+        }
       }
+      
+      console.debug(`[Context] Successfully loaded ${pendingHomework.length} homework items`);
+      
       if (pendingHomework.length > 0) {
         contextData.pendingHomework = pendingHomework.map(hw => 
           `- **${hw.title}**: ${hw.description}${hw.dueDate ? ` (Due: ${new Date(hw.dueDate).toLocaleDateString(language === 'nl' ? 'nl-NL' : 'en-US')})` : ''}`
@@ -1760,6 +1865,16 @@ function MainApp() {
       let aiResult;
       if (isFirstMessage) {
         // Generate a warm welcome message that includes previous session summary and homework check
+        console.debug(
+          `[Welcome] Generating welcome message with context:`,
+          {
+            sessionSummaries: contextData.sessionSummaries.length,
+            pendingHomework: contextData.pendingHomework?.length || 0,
+            sharedPersonalSummaries: contextData.sharedPersonalSummaries.length,
+            metaSummaries: contextData.metaSummaries.length
+          }
+        );
+        
         aiResult = await AI.generateSessionWelcome(
           activeSession.coachPersona,
           activeSession.coachGender,
@@ -1777,6 +1892,8 @@ function MainApp() {
             lastHomework: contextData.lastHomework
           }
         );
+        
+        console.debug(`[Welcome] ✓ Welcome message generated:`, aiResult.text?.slice(0, 100) + '...');
       } else {
         // Normal conversation flow
         aiResult = await AI.generateCoachResponse(

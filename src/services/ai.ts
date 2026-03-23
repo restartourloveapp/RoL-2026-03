@@ -217,13 +217,24 @@ export async function generateSessionWelcome(
     : "This is a PERSONAL session.";
 
   let welcomeContext = "";
+  console.debug(`[AI] Welcome context received:`, {
+    hasSummaries: !!context?.sessionSummaries?.length,
+    summariesCount: context?.sessionSummaries?.length || 0,
+    hasHomework: !!context?.pendingHomework?.length,
+    homeworkCount: context?.pendingHomework?.length || 0,
+    hasLastHomework: !!context?.lastHomework
+  });
+  
   if (context?.sessionSummaries?.length) {
+    console.debug(`[AI] Including ${context.sessionSummaries.length} session summary/ies`);
     welcomeContext += `\n[PREVIOUS SESSION SUMMARY]:\n${context.sessionSummaries[0]}\n`;
   }
   if (context?.pendingHomework?.length) {
+    console.debug(`[AI] Including ${context.pendingHomework.length} homework items`);
     welcomeContext += `\n[HOMEWORK FROM LAST SESSION]:\n${context.pendingHomework.join("\n")}\n`;
   }
   if (context?.lastHomework && !context?.pendingHomework?.length) {
+    console.debug(`[AI] Including lastHomework from context`);
     welcomeContext += `\n[HOMEWORK FROM LAST SESSION]:\n${context.lastHomework}\n`;
   }
 
