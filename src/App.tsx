@@ -1240,6 +1240,7 @@ function MainApp() {
 
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
+  const [sessionHomework, setSessionHomework] = useState<Array<{ title: string; description: string; dueDate?: string }>>([]);
   const [responseTip, setResponseTip] = useState<string | null>(null);
   const [isTipLoading, setIsTipLoading] = useState(false);
 
@@ -1284,6 +1285,7 @@ function MainApp() {
         const isPremium = profile?.subscriptionTier === 'premium';
         const result = await AI.generateSummary(history, language, isPremium);
         setSummary(result.summary);
+        setSessionHomework(result.homework || []);
 
         // Save encrypted summary to session document
         const encryptedSummary = await Encryption.encryptText(result.summary, activeSSK);
@@ -3395,16 +3397,43 @@ function MainApp() {
                     >
                       <div className="flex items-center justify-between mb-6">
                         <h3 className="text-xl font-serif font-bold">{t('sessions.summaryTitle')}</h3>
-                        <button onClick={() => setSummary(null)} className="p-2 text-stone-400">
+                        <button onClick={() => {
+                          setSummary(null);
+                          setSessionHomework([]);
+                        }} className="p-2 text-stone-400">
                           <Plus className="w-6 h-6 rotate-45" />
                         </button>
                       </div>
                       <div className="prose prose-sm prose-stone">
                         <ReactMarkdown>{summary}</ReactMarkdown>
                       </div>
+
+                      {/* Homework Section */}
+                      {sessionHomework && sessionHomework.length > 0 && (
+                        <div className="mt-8 pt-8 border-t border-stone-200">
+                          <h4 className="text-lg font-serif font-bold mb-4 text-emerald-700">
+                            {language === 'nl' ? 'Huiswerkopdrachten' : 'Homework Assignments'}
+                          </h4>
+                          <div className="space-y-4">
+                            {sessionHomework.map((task, idx) => (
+                              <div key={idx} className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+                                <h5 className="font-bold text-stone-800 mb-2">{task.title}</h5>
+                                <p className="text-stone-700 text-sm mb-2">{task.description}</p>
+                                {task.dueDate && (
+                                  <p className="text-xs text-stone-500">
+                                    {language === 'nl' ? 'Uiterste datum:' : 'Due date:'} {new Date(task.dueDate).toLocaleDateString(language === 'nl' ? 'nl-NL' : 'en-US')}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <button 
                         onClick={() => {
                           setSummary(null);
+                          setSessionHomework([]);
                           setActiveSession(null);
                           setView('sessions');
                         }}
