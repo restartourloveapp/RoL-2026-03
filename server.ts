@@ -4,6 +4,7 @@ import path from "path";
 import Stripe from "stripe";
 import * as admin from 'firebase-admin';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -32,6 +33,36 @@ function validateCheckoutSession(data: any): { valid: boolean; error?: string } 
   }
   
   return { valid: true };
+}
+
+// ✅ SECURITY FIX: Audit logging for security events
+async function logAuditEvent(
+  userId: string,
+  action: string,
+  details: Record<string, any>,
+  req: express.Request
+): Promise<void> {
+  try {
+    const firestore = getDb();
+    await firestore.collection('auditLogs').add({
+      userId,
+      action,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      ipAddress: req.ip || req.socket.remoteAddress,
+      userAgent: req.headers['user-agent'],
+      details,
+    });
+  } catch (error) {
+    // Don't fail the request if logging fails, just log the error
+    console.error('Failed to log audit event:', error);
+  }
+}
+
+// ✅ SECURITY FIX: Generate time-limited tokens for partner requests
+function generatePartnerToken(): { token: string; expiresAt: Date } {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  return { token, expiresAt };
 }
 
 function getDb() {
@@ -139,6 +170,14 @@ async function startServer() {
             subscriptionTier: 'premium',
             updatedAt: new Date().toISOString()
           });
+          
+          // ✅ SECURITY FIX: Log premium upgrade for audit trail
+          await logAuditEvent(userId, 'premium_upgrade', {
+            stripeSessionId: session.id,
+            amount: session.amount_total,
+            currency: session.currency,
+          }, req);
+          
           console.log(`User ${userId} upgraded to premium.`);
         } catch (e) {
           console.error(`Failed to update user ${userId} in Firestore`, e);
@@ -151,8 +190,32 @@ async function startServer() {
 
   app.use(express.json());
 
-  // ✅ SECURITY FIX: Add security headers to all responses
+  // ✅ SECURITY FIX: Add CORS and security headers to all responses
   app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://restartourlove.app',
+      'https://www.restartourlove.app',
+      'https://rol-2026-test.web.app',
+      'https://rol-2026-test.firebaseapp.com',
+    ];
+
+    // ✅ CORS Configuration - Allow requests only from approved origins
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Stripe-Signature');
+      res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+
     // Prevent MIME type sniffing
     res.setHeader('X-Content-Type-Options', 'nosniff');
     
@@ -165,8 +228,8 @@ async function startServer() {
     // HSTS - enforce HTTPS
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     
-    // CSP - Content Security Policy
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'");
+    // CSP - Content Security Policy (allow our app and Bootstrap CDN)
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com https://api.stripe.com");
     
     // Referrer Policy
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -184,6 +247,56 @@ async function startServer() {
   // API routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // ✅ SECURITY FIX: Generate partner request token (time-limited instead of email-based)
+  app.post("/api/generate-partner-token", rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10, // Limit to 10 partner requests per 15 minutes
+    message: 'Too many partner requests, please try again later',
+  }), async (req, res) => {
+    try {
+      const { fromUserId, toEmail } = req.body;
+      
+      // Validate input
+      if (!fromUserId || typeof fromUserId !== 'string' || fromUserId.trim().length === 0) {
+        return res.status(400).json({ error: 'Invalid fromUserId' });
+      }
+      
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!toEmail || typeof toEmail !== 'string' || !emailRegex.test(toEmail)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      
+      const firestore = getDb();
+      const { token, expiresAt } = generatePartnerToken();
+      
+      // Store token in Firestore with expiration
+      const tokenRef = await firestore.collection('partnerTokens').add({
+        fromUserId,
+        toEmail,
+        token: crypto.createHash('sha256').update(token).digest('hex'), // Hash for security
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        used: false,
+      });
+      
+      // Log the partner request send
+      await logAuditEvent(fromUserId, 'partner_request_sent', {
+        toEmail,
+        tokenId: tokenRef.id,
+      }, req);
+      
+      // Return token to send to partner (this would typically be in an email)
+      res.json({ 
+        token, // This token is only given to the user to share with their partner
+        expiresAt,
+        message: 'Share this link with your partner to accept the request'
+      });
+    } catch (e: any) {
+      console.error('Partner token generation error:', e);
+      res.status(500).json({ error: 'Failed to generate partner token' });
+    }
   });
 
   // Stripe Checkout Session
@@ -224,8 +337,16 @@ async function startServer() {
         },
       });
 
+      // ✅ SECURITY FIX: Log checkout session creation for audit trail
+      await logAuditEvent(userId, 'checkout_session_created', {
+        sessionId: session.id,
+        email: email,
+        amount: session.amount_total,
+      }, req);
+
       res.json({ url: session.url });
     } catch (e: any) {
+      console.error('Checkout session error:', e);
       res.status(500).json({ error: e.message });
     }
   });

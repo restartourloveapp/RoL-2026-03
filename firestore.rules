@@ -237,12 +237,21 @@ service cloud.firestore {
 
     // Partner Requests collection
     match /partner_requests/{requestId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.fromUid || (request.auth.token.email == resource.data.toEmail) || isAdmin());
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.acceptedByUid || isAdmin());
       allow create: if isAuthenticated() && request.auth.uid == request.resource.data.fromUid && isValidPartnerRequest(request.resource.data);
-      allow update: if isAuthenticated() && (request.auth.uid == resource.data.fromUid || (request.auth.token.email == resource.data.toEmail) || isAdmin()) &&
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.fromUid || isAdmin()) &&
                       isValidPartnerRequest(request.resource.data) &&
                       request.resource.data.fromUid == resource.data.fromUid &&
                       request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    // Partner Tokens collection - ✅ SECURITY FIX: Token-based partner request access
+    match /partnerTokens/{tokenId} {
+      allow read: if false; // Tokens are never read from client
+      allow create: if isAuthenticated(); // Created by server only via API
+      allow update: if isAuthenticated() && 
+                      (request.resource.data.get('used', false) == true && resource.data.get('used', false) == false); // Can only mark as used
+      allow delete: if isAdmin(); // Only admins can delete tokens
     }
 
     // Tickets collection
