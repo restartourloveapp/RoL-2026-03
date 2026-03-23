@@ -1673,22 +1673,18 @@ function MainApp() {
         } catch (e) { console.error("Failed to decrypt meta summary", e); }
       }
 
-      // 5. Get Last Homework
+      // 5. Get Pending Homework (all unfinished homework for follow-up check)
       const hwSnap = await getDocs(query(
         collection(db, 'homework'),
         where('ownerUid', '==', user!.uid),
+        where('status', '==', 'assigned'),
         orderBy('createdAt', 'desc'),
-        limit(1)
+        limit(10)
       ));
-      if (!hwSnap.empty) {
-        const data = hwSnap.docs[0].data();
+      const pendingHomework: Array<{ title: string; description: string; dueDate?: string }> = [];
+      for (const hwDoc of hwSnap.docs) {
+        const data = hwDoc.data();
         try {
-          // Homework is encrypted with the session's SSK. We'd need to fetch that session's SSK.
-          // For now, let's assume we can decrypt it if we have the CK.
-          // Wait, homework in my previous implementation was encrypted with SSK.
-          // Let's check how it's saved.
-          // In handleSendMessage, it's encrypted with activeSSK.
-          // So we need the SSK of the session that created the homework.
           const hwSessionDoc = await getDoc(doc(db, 'sessions', data.sessionId));
           if (hwSessionDoc.exists()) {
             const hwSessionData = hwSessionDoc.data();
@@ -1697,10 +1693,21 @@ function MainApp() {
               const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
               const title = await Encryption.decryptText({ ciphertext: data.title, iv: data.titleIv }, ssk);
               const desc = await Encryption.decryptText({ ciphertext: data.description, iv: data.descriptionIv }, ssk);
-              contextData.lastHomework = `${title}: ${desc}`;
+              pendingHomework.push({
+                title,
+                description: desc,
+                dueDate: data.dueDate?.toDate?.().toISOString()
+              });
             }
           }
         } catch (e) { console.error("Failed to decrypt homework", e); }
+      }
+      if (pendingHomework.length > 0) {
+        contextData.pendingHomework = pendingHomework.map(hw => 
+          `- **${hw.title}**: ${hw.description}${hw.dueDate ? ` (Due: ${new Date(hw.dueDate).toLocaleDateString(language === 'nl' ? 'nl-NL' : 'en-US')})` : ''}`
+        );
+        // Also keep lastHomework for backward compatibility
+        contextData.lastHomework = `${pendingHomework[0].title}: ${pendingHomework[0].description}`;
       }
 
       // --- AI Response Generation ---

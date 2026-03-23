@@ -21,6 +21,7 @@ export async function generateCoachResponse(
     sharedPersonalSummaries?: string[],
     metaSummaries?: string[],
     lastHomework?: string,
+    pendingHomework?: string[],
     messageCount?: number,
     isPremium?: boolean
   }
@@ -57,7 +58,11 @@ export async function generateCoachResponse(
     if (context.messageSummaries?.length) {
       extraContext += `\n[EARLIER IN THIS SESSION]:\n${context.messageSummaries.join("\n")}\n`;
     }
-    if (context.lastHomework) {
+    if (context.pendingHomework?.length) {
+      extraContext += `\n[HOMEWORK TO CHECK]:\nThe couple has assigned homework that needs to be checked:\n${context.pendingHomework.join("\n")}\n\nIMPORTANT: At some point in this session, you MUST ask about this homework. 
+      Check if they completed it, what they learned from it, and how they felt about the experience. 
+      Use this as an opportunity to reinforce progress and identify areas for improvement.\n`;
+    } else if (context.lastHomework) {
       extraContext += `\n[CURRENT HOMEWORK]:\n${context.lastHomework}\n`;
     }
 
