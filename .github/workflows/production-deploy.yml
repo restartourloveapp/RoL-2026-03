@@ -28,10 +28,9 @@ jobs:
         run: npm ci
 
       - name: Create Firebase Config from Secret
+        id: config_step
         run: |
-          echo "{" > firebase-applet-config.json
-          echo "${{ secrets.FIREBASE_CONFIG_PROD }}" >> firebase-applet-config.json
-          echo "}" >> firebase-applet-config.json
+          RAW_SECRET="${{ secrets.FIREBASE_CONFIG_PROD }}" node scripts/build-firebase-config.cjs >> $GITHUB_OUTPUT
 
       - name: Build Web App (Production)
         run: npm run build

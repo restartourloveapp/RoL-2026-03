@@ -25,38 +25,7 @@ jobs:
       - name: Create Firebase Config from Secret
         id: config_step
         run: |
-          cat <<'EOF' > config_builder.cjs
-          const fs = require('fs');
-          const secretContent = process.env.RAW_SECRET;
-          try {
-            // Extract the content inside the curly braces
-            const match = secretContent.match(/\{([\s\S]*)\}/);
-            if (!match) throw new Error('Could not find {...} block in secret');
-            
-            const body = match[1];
-            const config = {};
-            
-            // Extract key-value pairs using regex to handle optional quotes and trailing commas
-            const regex = /([a-zA-Z0-9]+)\s*:\s*["']?([^"',\s}]+)["']?/g;
-            let m;
-            while ((m = regex.exec(body)) !== null) {
-              config[m[1]] = m[2];
-            }
-
-            if (!config.projectId) {
-              throw new Error('projectId is missing from the configuration. Parsed keys: ' + Object.keys(config).join(', '));
-            }
-
-            fs.writeFileSync('firebase-applet-config.json', JSON.stringify(config, null, 2));
-            console.log('PROJECT_ID=' + config.projectId);
-          } catch (e) {
-            console.error('Failed to parse FIREBASE_CONFIG_TEST.');
-            console.error(e.message);
-            process.exit(1);
-          }
-          EOF
-          OUTPUT=$(RAW_SECRET="${{ secrets.FIREBASE_CONFIG_TEST }}" node config_builder.cjs)
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          RAW_SECRET="${{ secrets.FIREBASE_CONFIG_TEST }}" node scripts/build-firebase-config.cjs >> $GITHUB_OUTPUT
 
       - name: Build Web App
         run: npm run build
