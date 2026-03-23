@@ -13,7 +13,7 @@ The application implements strong End-to-End Encryption (E2EE) and has privacy-f
 - Rate limiting on sensitive endpoints
 
 ✅ **Phase 2 Status: COMPLETE** (5/5 items) - Commit b19251e
-- CORS and security headers (comprehensive configuration)
+- CORS and security header (comprehensive configuration)
 - Audit logging system (all security events logged)
 - Partner request security (token-based instead of email enumeration)
 - Rate limiting on partner requests and all endpoints
