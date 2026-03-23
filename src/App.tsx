@@ -1213,15 +1213,39 @@ function MainApp() {
         return;
       }
 
+      const batch = writeBatch(db);
+
       // Delete all messages in the session subcollection
       const messagesQuery = query(collection(db, 'sessions', sessionId, 'messages'));
       const messagesSnapshot = await getDocs(messagesQuery);
-      const batch = writeBatch(db);
       messagesSnapshot.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
+
+      // Delete all message summaries in the session subcollection
+      const msgSummariesQuery = query(collection(db, 'sessions', sessionId, 'message_summaries'));
+      const msgSummariesSnapshot = await getDocs(msgSummariesQuery);
+      msgSummariesSnapshot.docs.forEach(d => batch.delete(d.ref));
+
+      // Delete timeline entries related to this session
+      const timelineQuery = query(
+        collection(db, 'timeline'),
+        where('sessionId', '==', sessionId)
+      );
+      const timelineSnapshot = await getDocs(timelineQuery);
+      timelineSnapshot.docs.forEach(d => batch.delete(d.ref));
+
+      // Delete homework entries related to this session
+      const hwQuery = query(
+        collection(db, 'homework'),
+        where('sessionId', '==', sessionId)
+      );
+      const hwSnapshot = await getDocs(hwQuery);
+      hwSnapshot.docs.forEach(d => batch.delete(d.ref));
 
       // Delete the session document
-      await deleteDoc(doc(db, 'sessions', sessionId));
+      batch.delete(doc(db, 'sessions', sessionId));
+
+      // Commit all deletions
+      await batch.commit();
 
       showToast(t('sessions.alerts.sessionDeleted'), 'success');
       setSessionToDelete(null);

@@ -224,12 +224,14 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isSessionParticipant(sessionId) || isAdmin();
         allow create: if isSessionParticipant(sessionId) && isValidMessage(request.resource.data);
+        allow delete: if isSessionParticipant(sessionId) || isAdmin();
       }
 
       // Message Summaries sub-collection
       match /message_summaries/{summaryId} {
         allow read: if isSessionParticipant(sessionId) || isAdmin();
         allow create: if isSessionParticipant(sessionId) && isValidMessageSummary(request.resource.data);
+        allow delete: if isSessionParticipant(sessionId) || isAdmin();
       }
     }
 
@@ -260,6 +262,7 @@ service cloud.firestore {
                       isValidTimelineEntry(request.resource.data) &&
                       request.resource.data.ownerUid == resource.data.ownerUid &&
                       request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
     }
 
     // Homework collection
@@ -270,6 +273,7 @@ service cloud.firestore {
                       isValidHomework(request.resource.data) &&
                       request.resource.data.ownerUid == resource.data.ownerUid &&
                       request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.ownerUid || request.auth.uid == resource.data.partnerUid || isAdmin());
     }
 
     // Crisis Resources collection
