@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import Stripe from "stripe";
 import * as admin from 'firebase-admin';
+import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -59,9 +60,44 @@ function getStripe() {
   return stripe;
 }
 
+// ✅ SECURITY FIX: Rate limiting for checkout endpoint
+// Prevent brute force attempts and abuse
+const checkoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 checkout attempts per windowMs
+  message: 'Too many checkout attempts, please try again later',
+  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+  legacyHeaders: false, // Disable `X-RateLimit-*` headers
+  skip: (req) => {
+    // Don't count health checks or webhooks in rate limiting
+    return req.path === '/api/health';
+  },
+});
+
+// ✅ SECURITY FIX: Rate limiting for webhook endpoint
+// Prevent brute force attacks and resource exhaustion
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // Allow more attempts for webhook (might have retries)
+  message: 'Too many webhook requests, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Only rate limit webhook endpoint
+    return req.path !== '/api/webhook';
+  },
+  keyGenerator: (req) => {
+    // Rate limit by Stripe signature + IP (webhook retries use same signature)
+    return `${req.headers['stripe-signature']}-${req.ip}`;
+  },
+});
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // ✅ SECURITY FIX: Apply rate limiting to all API routes
+  app.use(webhookLimiter);
 
   // Stripe Webhook needs raw body
   app.post("/api/webhook", express.raw({type: 'application/json'}), async (req, res) => {
@@ -151,7 +187,7 @@ async function startServer() {
   });
 
   // Stripe Checkout Session
-  app.post("/api/create-checkout-session", async (req, res) => {
+  app.post("/api/create-checkout-session", checkoutLimiter, async (req, res) => {
     try {
       // ✅ SECURITY FIX: Validate input before processing
       const validation = validateCheckoutSession(req.body);
