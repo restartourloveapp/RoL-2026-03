@@ -374,10 +374,10 @@ function MainApp() {
   const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => {
-    if (activeSession && user && !selectedSpeakerUid) {
-      setSelectedSpeakerUid(user.uid);
+    if (activeSession && user && profile && !selectedSpeakerUid) {
+      setSelectedSpeakerUid(profile.profileId);  // Always use profileId for proper attribution
     }
-  }, [activeSession?.id, user?.uid]);
+  }, [activeSession?.id, user?.uid, profile?.profileId]);
 
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
