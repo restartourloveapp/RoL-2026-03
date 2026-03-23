@@ -3491,46 +3491,46 @@ function MainApp() {
       </AnimatePresence>
 
       {/* Bottom Navigation */}
-      <nav className="h-16 bg-white border-t border-stone-100 flex items-center justify-around px-6">
+      <nav className="h-20 bg-white border-t border-stone-100 flex items-center justify-around px-2">
         <button 
           onClick={() => { setView('sessions'); setActiveSession(null); }}
           className={cn(
-            "flex flex-col items-center gap-1 transition-colors",
+            "flex flex-col items-center gap-2 py-2 px-1 transition-colors",
             view === 'sessions' ? "text-emerald-600" : "text-stone-400"
           )}
         >
           <MessageCircle className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">{t('common.chats')}</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">{t('common.chats')}</span>
         </button>
         <button 
           onClick={() => { setView('timeline'); setActiveSession(null); }}
           className={cn(
-            "flex flex-col items-center gap-1 transition-colors",
+            "flex flex-col items-center gap-2 py-2 px-1 transition-colors",
             view === 'timeline' ? "text-emerald-600" : "text-stone-400"
           )}
         >
           <History className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">{t('common.journey')}</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">{t('common.journey')}</span>
         </button>
         <button 
           onClick={() => { setView('safety'); setActiveSession(null); }}
           className={cn(
-            "flex flex-col items-center gap-1 transition-colors",
+            "flex flex-col items-center gap-2 py-2 px-1 transition-colors",
             view === 'safety' ? "text-red-600" : "text-stone-400"
           )}
         >
           <LifeBuoy className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">{t('common.safety')}</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">{t('common.safety')}</span>
         </button>
         <button 
           onClick={() => { setView('settings'); setActiveSession(null); }}
           className={cn(
-            "flex flex-col items-center gap-1 transition-colors",
+            "flex flex-col items-center gap-2 py-2 px-1 transition-colors",
             view === 'settings' ? "text-emerald-600" : "text-stone-400"
           )}
         >
           <Settings className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">{t('common.settings')}</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">{t('common.settings')}</span>
         </button>
       </nav>
 
