@@ -78,13 +78,15 @@ service cloud.firestore {
 
     function isValidSession(data) {
       let allowedFields = [
-        'id', 'ownerUid', 'partnerUid', 'coachPersona', 'coachGender', 
+        'id', 'ownerUid', 'partnerUid', 'ownerProfileId', 'partnerProfileId', 'coachPersona', 'coachGender', 
         'type', 'status', 'wrappedSSK', 'partnerWrappedSSK', 
         'lastMessageAt', 'createdAt', 'endedAt', 'messageCount', 'lastCheckpointSummary', 'summary', 'summaryIv'
       ];
       return hasOnlyAllowedFields(allowedFields) &&
              (!('ownerUid' in data) || data.ownerUid is string) &&
              (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
+             (!('ownerProfileId' in data) || (data.ownerProfileId is string && data.ownerProfileId.size() <= 128)) &&
+             (!('partnerProfileId' in data) || data.partnerProfileId == null || (data.partnerProfileId is string && data.partnerProfileId.size() <= 128)) &&
              (!('coachPersona' in data) || data.coachPersona in ['Direct', 'Soft', 'Empathic', 'solin', 'kael', 'ravian', 'amari', 'leora']) &&
              (!('coachGender' in data) || data.coachGender in ['male', 'female', 'Male', 'Female']) &&
              (!('type' in data) || data.type in ['personal', 'couple']) &&
@@ -101,10 +103,11 @@ service cloud.firestore {
     }
 
     function isValidMessage(data) {
-      let allowedFields = ['id', 'sessionId', 'senderUid', 'content', 'iv', 'createdAt', 'role'];
+      let allowedFields = ['id', 'sessionId', 'senderUid', 'senderProfileId', 'content', 'iv', 'createdAt', 'role'];
       return hasOnlyAllowedFields(allowedFields) &&
              (!('sessionId' in data) || (data.sessionId is string && data.sessionId.size() <= 128)) &&
              (!('senderUid' in data) || (data.senderUid is string && data.senderUid.size() <= 128)) &&
+             (!('senderProfileId' in data) || data.senderProfileId == null || (data.senderProfileId is string && data.senderProfileId.size() <= 128)) &&
              (!('content' in data) || (data.content is string && data.content.size() > 0 && data.content.size() <= 10000)) &&
              (!('iv' in data) || (data.iv is string && data.iv.size() <= 64)) &&
              (!('role' in data) || data.role in ['user', 'assistant', 'system']) &&
