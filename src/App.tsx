@@ -356,6 +356,7 @@ function MainApp() {
   const [isConnectingAsPartner, setIsConnectingAsPartner] = useState(false);
   const [connectionCodeError, setConnectionCodeError] = useState<string | null>(null);
   const [mainAccountEmail, setMainAccountEmail] = useState('');
+  const [confirmedDataWipeout, setConfirmedDataWipeout] = useState(false);
   const [showPartnerDeviceSettings, setShowPartnerDeviceSettings] = useState(false);
 
   const [decryptedProfile, setDecryptedProfile] = useState<{
@@ -2346,6 +2347,31 @@ function MainApp() {
   if (isProfileIncomplete && view !== 'settings') {
     return (
       <div className="h-screen bg-stone-50 flex flex-col p-6 overflow-y-auto pt-safe pb-safe">
+        {/* Progress Indicator */}
+        {accountType && (
+          <div className="mb-8 max-w-md mx-auto w-full">
+            <div className="flex items-center justify-between text-xs font-bold text-stone-400 uppercase tracking-widest mb-3">
+              <span>Setup Progress</span>
+              <span>
+                {accountType === 'own' ? (
+                  setupStep === 1 ? '1 of 2' : setupStep === 2 ? '2 of 2' : ''
+                ) : (
+                  setupStep === 2 ? '1 of 2' : setupStep === 3 ? '2 of 2' : ''
+                )}
+              </span>
+            </div>
+            <div className="h-1.5 bg-stone-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-emerald-500 transition-all duration-300"
+                style={{ 
+                  width: accountType === 'own' 
+                    ? (setupStep === 1 ? '50%' : '100%')
+                    : (setupStep === 2 ? '50%' : '100%')
+                }}
+              />
+            </div>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           {/* ✅ FEATURE: Partner Device Account - Account Type Selection */}
           {!accountType ? (
@@ -2497,14 +2523,30 @@ function MainApp() {
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => setSetupStep(2)}
-                  disabled={!profileNameInput || !partnerNameInput}
-                  className="w-full bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                >
-                  {t('common.next')}
-                  <ChevronRight className="w-5 h-5" />
-                </button>
+                <div className="h-px bg-stone-100" />
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => {
+                      setAccountType(null);
+                      setProfileNameInput('');
+                      setProfilePronounsInput('');
+                      setPartnerNameInput('');
+                      setPartnerPronounsInput('');
+                    }}
+                    className="flex-1 px-6 py-4 border-2 border-stone-200 text-stone-600 rounded-2xl font-bold hover:border-stone-300 transition-all"
+                  >
+                    {t('common.back')}
+                  </button>
+                  <button 
+                    onClick={() => setSetupStep(2)}
+                    disabled={!profileNameInput || !partnerNameInput}
+                    className="flex-1 bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                  >
+                    {t('common.next')}
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </motion.div>
           ) : setupStep === 2 && accountType === 'partner' ? (
@@ -2524,9 +2566,9 @@ function MainApp() {
               </div>
 
               <div className="space-y-6 bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
-                  <p className="text-sm text-amber-900 font-medium">
-                    ⚠️ <strong>Important:</strong> Connecting to a partner account will delete all your personal data on this device. Couple sessions will be preserved.
+                <div className="p-5 bg-red-50 border-l-4 border-red-400 rounded-lg">
+                  <p className="text-sm text-red-900 leading-relaxed">
+                    <strong>⚠️ Warning:</strong> Connecting to a partner's account will <strong>permanently delete all your personal data</strong> on this device, including personal coaching sessions. Couple sessions will be preserved. This action cannot be undone.
                   </p>
                 </div>
 
@@ -2568,6 +2610,19 @@ function MainApp() {
                       <p className="text-sm text-red-900">{connectionCodeError}</p>
                     </div>
                   )}
+
+                  <div className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl border border-stone-100">
+                    <input 
+                      type="checkbox"
+                      id="confirmWipeout"
+                      checked={confirmedDataWipeout}
+                      onChange={(e) => setConfirmedDataWipeout(e.target.checked)}
+                      className="w-4 h-4 mt-1 cursor-pointer accent-emerald-600"
+                    />
+                    <label htmlFor="confirmWipeout" className="text-xs text-stone-600 cursor-pointer leading-relaxed">
+                      I understand that all my personal data on this device will be permanently deleted, and I accept the consequences.
+                    </label>
+                  </div>
                 </div>
 
                 <div className="h-px bg-stone-100" />
@@ -2580,6 +2635,7 @@ function MainApp() {
                       setPartnerConnectionCode('');
                       setMainAccountEmail('');
                       setConnectionCodeError(null);
+                      setConfirmedDataWipeout(false);
                     }}
                     className="flex-1 px-6 py-4 border-2 border-stone-200 text-stone-600 rounded-2xl font-bold hover:border-stone-300 transition-all"
                   >
@@ -2593,6 +2649,10 @@ function MainApp() {
                       }
                       if (!mainAccountEmail) {
                         setConnectionCodeError('Please enter partner email');
+                        return;
+                      }
+                      if (!confirmedDataWipeout) {
+                        setConnectionCodeError('Please confirm you understand the data will be deleted');
                         return;
                       }
                       
@@ -2623,7 +2683,7 @@ function MainApp() {
                         setIsConnectingAsPartner(false);
                       }
                     }}
-                    disabled={isConnectingAsPartner}
+                    disabled={isConnectingAsPartner || !confirmedDataWipeout || !partnerConnectionCode || partnerConnectionCode.length !== 6 || !mainAccountEmail}
                     className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                   >
                     {isConnectingAsPartner ? (
