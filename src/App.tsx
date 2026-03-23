@@ -1730,21 +1730,47 @@ function MainApp() {
         return { role, content };
       }).slice(-AI_CONFIG.MAX_FULL_MESSAGES);
 
-      const aiResult = await AI.generateCoachResponse(
-        activeSession.coachPersona,
-        activeSession.coachGender,
-        history,
-        text,
-        language,
-        decryptedProfile ? {
-          userName: decryptedProfile.name,
-          userPronouns: decryptedProfile.pronouns,
-          partnerName: decryptedProfile.partnerName,
-          partnerPronouns: decryptedProfile.partnerPronouns
-        } : undefined,
-        activeSession.type === 'couple',
-        contextData
-      );
+      // Check if this is the FIRST message in the session (welcome message)
+      const isFirstMessage = messages.filter(m => m.senderUid === 'ai_coach').length === 0;
+      
+      let aiResult;
+      if (isFirstMessage) {
+        // Generate a warm welcome message that includes previous session summary and homework check
+        aiResult = await AI.generateSessionWelcome(
+          activeSession.coachPersona,
+          activeSession.coachGender,
+          language,
+          decryptedProfile ? {
+            userName: decryptedProfile.name,
+            userPronouns: decryptedProfile.pronouns,
+            partnerName: decryptedProfile.partnerName,
+            partnerPronouns: decryptedProfile.partnerPronouns
+          } : undefined,
+          activeSession.type === 'couple',
+          {
+            sessionSummaries: contextData.sessionSummaries,
+            pendingHomework: contextData.pendingHomework,
+            lastHomework: contextData.lastHomework
+          }
+        );
+      } else {
+        // Normal conversation flow
+        aiResult = await AI.generateCoachResponse(
+          activeSession.coachPersona,
+          activeSession.coachGender,
+          history,
+          text,
+          language,
+          decryptedProfile ? {
+            userName: decryptedProfile.name,
+            userPronouns: decryptedProfile.pronouns,
+            partnerName: decryptedProfile.partnerName,
+            partnerPronouns: decryptedProfile.partnerPronouns
+          } : undefined,
+          activeSession.type === 'couple',
+          contextData
+        );
+      }
 
       if (aiResult && aiResult.text) {
         const encryptedAi = await Encryption.encryptText(aiResult.text, activeSSK);

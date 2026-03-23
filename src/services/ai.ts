@@ -189,6 +189,99 @@ export async function generateResponseTip(
   return result.response.text();
 }
 
+export async function generateSessionWelcome(
+  persona: CoachPersona,
+  gender: CoachGender,
+  language: string = 'nl',
+  profileData?: { userName?: string, userPronouns?: string, partnerName?: string, partnerPronouns?: string },
+  isCoupleSession: boolean = false,
+  context?: {
+    sessionSummaries?: string[],
+    pendingHomework?: string[],
+    lastHomework?: string,
+  }
+) {
+  const langKey = language === 'nl' ? 'nl' : 'en';
+  const personaPrompt = COACH_SYSTEM_PROMPTS[langKey][persona];
+
+  let profileContext = "";
+  if (profileData) {
+    if (profileData.userName) profileContext += `The user's name is ${profileData.userName}. `;
+    if (profileData.userPronouns) profileContext += `The user's pronouns are ${profileData.userPronouns}. `;
+    if (profileData.partnerName) profileContext += `The partner's name is ${profileData.partnerName}. `;
+    if (profileData.partnerPronouns) profileContext += `The partner's pronouns are ${profileData.partnerPronouns}. `;
+  }
+
+  const sessionContext = isCoupleSession 
+    ? "This is a COUPLE session (three-way conversation). Both partners are present." 
+    : "This is a PERSONAL session.";
+
+  let welcomeContext = "";
+  if (context?.sessionSummaries?.length) {
+    welcomeContext += `\n[PREVIOUS SESSION SUMMARY]:\n${context.sessionSummaries[0]}\n`;
+  }
+  if (context?.pendingHomework?.length) {
+    welcomeContext += `\n[HOMEWORK FROM LAST SESSION]:\n${context.pendingHomework.join("\n")}\n`;
+  }
+  if (context?.lastHomework && !context?.pendingHomework?.length) {
+    welcomeContext += `\n[HOMEWORK FROM LAST SESSION]:\n${context.lastHomework}\n`;
+  }
+
+  const systemInstruction = `${personaPrompt}
+
+  You are opening a NEW coaching session. Your role right now is to:
+  1. Warmly welcome the couple/person back
+  2. Briefly acknowledge progress from the last session (if available)
+  3. Check in on any homework assignments from the previous session
+  4. Ask if they're ready to continue from where you left off, or if there's something new to address
+  
+  This is your OPENING STATEMENT for the session. Keep it warm, encouraging, and focused on connection.
+  
+  ${welcomeContext}
+  
+  ${profileContext}
+  ${sessionContext}
+  
+  You identify as ${gender}. Respond warmly and with genuine curiosity about their experience since the last session.
+  Ask ONE clear question to get them started.
+  
+  IMPORTANT: You MUST respond in the following language: ${language === 'nl' ? 'Dutch (Nederlands)' : 'English'}.
+  
+  RESPONSE FORMAT:
+  You MUST return a JSON object with the following structure:
+  {
+    "text": "Your warm welcome and opening question",
+    "nextSpeaker": "user" | "partner" | "both"
+  }`;
+
+  const model = genAI.getGenerativeModel({
+    model: AI_CONFIG.MODEL_NAME,
+    systemInstruction,
+  });
+
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: "Please welcome us to this new session." }]
+      }
+    ],
+    generationConfig: {
+      temperature: AI_CONFIG.DEFAULT_TEMPERATURE || 0.7,
+      responseMimeType: "application/json",
+    }
+  });
+
+  const responseText = result.response.text();
+  try {
+    const parsed = JSON.parse(responseText);
+    return parsed;
+  } catch (e) {
+    console.error("Failed to parse welcome response as JSON", e, responseText);
+    return { text: responseText, nextSpeaker: isCoupleSession ? 'both' : 'user' };
+  }
+}
+
 export async function generateSummary(
   history: { role: 'user' | 'model', content: string }[],
   language: string = 'nl',
