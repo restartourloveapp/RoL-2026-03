@@ -173,7 +173,7 @@ export const translations = {
     },
     dashboard: {
       welcome: "Welkom terug, {{name}}",
-      welcomePartner: "Welkom terug, {{name}} & {{partner}}",
+      welcomePartner: "Welkom {{name}} en {{partner}}",
       freeLimitInfo: "Je hebt {{count}} van de 3 gratis sessies gebruikt.",
       buyNow: "Word Premium",
       stats: {
@@ -435,7 +435,7 @@ export const translations = {
     },
     dashboard: {
       welcome: "Welcome back, {{name}}",
-      welcomePartner: "Welcome back, {{name}} & {{partner}}",
+      welcomePartner: "Welcome {{name}} and {{partner}}",
       freeLimitInfo: "You've used {{count}} of 3 free sessions.",
       buyNow: "Buy Premium Now",
       stats: {
