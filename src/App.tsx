@@ -146,6 +146,16 @@ interface PartnerRequest {
   code: string;
   respondentUid?: string;
   respondentEmail?: string;
+  profileSnapshot?: {
+    profileName?: string;
+    profilePronouns?: string;
+    partnerName?: string;
+    partnerPronouns?: string;
+    defaultCoupleCoach?: AI.CoachPersona;
+    personalCoach?: AI.CoachPersona;
+    language?: 'nl' | 'en';
+    subscriptionTier?: 'free' | 'premium';
+  };
   status: 'pending' | 'claimed' | 'accepted' | 'rejected';
   createdAt: any;
 }
@@ -1145,6 +1155,16 @@ function MainApp() {
         fromUid: user.uid,
         fromEmail: user.email || '',
         code,
+        profileSnapshot: {
+          profileName: decryptedProfile.name || '',
+          profilePronouns: decryptedProfile.pronouns || '',
+          partnerName: decryptedProfile.partnerName || '',
+          partnerPronouns: decryptedProfile.partnerPronouns || '',
+          defaultCoupleCoach: profile?.defaultCoupleCoach || 'solin',
+          personalCoach: profile?.personalCoach || 'solin',
+          language: profile?.language || 'nl',
+          subscriptionTier: profile?.subscriptionTier || 'free'
+        },
         status: 'pending',
         createdAt: serverTimestamp()
       });
@@ -1172,6 +1192,7 @@ function MainApp() {
         return;
       }
       const reqDoc = snap.docs[0];
+      const reqData = reqDoc.data() as PartnerRequest;
       if (reqDoc.data().fromUid === user.uid) {
         showToast(t('settings.cannotLinkSelf') || 'Cannot link with yourself', 'error');
         setIsClaimingCode(false);
@@ -1182,6 +1203,35 @@ function MainApp() {
         respondentEmail: user.email || '',
         status: 'claimed'
       });
+
+      // Replicate main-account profile snapshot to this partner account (re-encrypted with partner CK)
+      if (ck && reqData.profileSnapshot) {
+        const replicatedProfileName = await Encryption.encryptText(reqData.profileSnapshot.profileName || '', ck);
+        const replicatedProfilePronouns = await Encryption.encryptText(reqData.profileSnapshot.profilePronouns || '', ck);
+        const replicatedPartnerName = await Encryption.encryptText(reqData.profileSnapshot.partnerName || '', ck);
+        const replicatedPartnerPronouns = await Encryption.encryptText(reqData.profileSnapshot.partnerPronouns || '', ck);
+
+        await updateDoc(doc(db, 'users', user.uid), {
+          profileName: replicatedProfileName,
+          profilePronouns: replicatedProfilePronouns,
+          partnerName: replicatedPartnerName,
+          partnerPronouns: replicatedPartnerPronouns,
+          defaultCoupleCoach: reqData.profileSnapshot.defaultCoupleCoach || 'solin',
+          personalCoach: reqData.profileSnapshot.personalCoach || 'solin',
+          language: reqData.profileSnapshot.language || 'nl',
+          subscriptionTier: reqData.profileSnapshot.subscriptionTier || 'free',
+          accountType: 'partner',
+          updatedAt: serverTimestamp()
+        });
+
+        setDecryptedProfile({
+          name: reqData.profileSnapshot.profileName || '',
+          pronouns: reqData.profileSnapshot.profilePronouns || '',
+          partnerName: reqData.profileSnapshot.partnerName || '',
+          partnerPronouns: reqData.profileSnapshot.partnerPronouns || ''
+        });
+      }
+
       setLinkCodeInput('');
       showToast(t('settings.codeClaimed') || 'Code claimed! Waiting for approval...', 'success');
     } catch (e) {
@@ -2676,6 +2726,12 @@ function MainApp() {
                     <p className="text-[10px] text-stone-400">6-character code from your partner</p>
                   </div>
 
+                  {connectionCodeError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-2xl">
+                      <p className="text-sm text-red-900">{connectionCodeError}</p>
+                    </div>
+                  )}
+
 
                 </div>
 
@@ -2715,6 +2771,7 @@ function MainApp() {
                           setIsConnectingAsPartner(false);
                           return;
                         }
+                        const reqData = snap.docs[0].data() as PartnerRequest;
                         if (snap.docs[0].data().fromUid === user?.uid) {
                           setConnectionCodeError('You cannot connect with your own code.');
                           setIsConnectingAsPartner(false);
@@ -2726,6 +2783,35 @@ function MainApp() {
                           respondentEmail: user?.email || '',
                           status: 'claimed'
                         });
+
+                        // Replicate main-account profile snapshot to this partner account (re-encrypted with partner CK)
+                        if (ck && reqData.profileSnapshot) {
+                          const replicatedProfileName = await Encryption.encryptText(reqData.profileSnapshot.profileName || '', ck);
+                          const replicatedProfilePronouns = await Encryption.encryptText(reqData.profileSnapshot.profilePronouns || '', ck);
+                          const replicatedPartnerName = await Encryption.encryptText(reqData.profileSnapshot.partnerName || '', ck);
+                          const replicatedPartnerPronouns = await Encryption.encryptText(reqData.profileSnapshot.partnerPronouns || '', ck);
+
+                          await updateDoc(doc(db, 'users', user!.uid), {
+                            profileName: replicatedProfileName,
+                            profilePronouns: replicatedProfilePronouns,
+                            partnerName: replicatedPartnerName,
+                            partnerPronouns: replicatedPartnerPronouns,
+                            defaultCoupleCoach: reqData.profileSnapshot.defaultCoupleCoach || 'solin',
+                            personalCoach: reqData.profileSnapshot.personalCoach || 'solin',
+                            language: reqData.profileSnapshot.language || 'nl',
+                            subscriptionTier: reqData.profileSnapshot.subscriptionTier || 'free',
+                            accountType: 'partner',
+                            updatedAt: serverTimestamp()
+                          });
+
+                          setDecryptedProfile({
+                            name: reqData.profileSnapshot.profileName || '',
+                            pronouns: reqData.profileSnapshot.profilePronouns || '',
+                            partnerName: reqData.profileSnapshot.partnerName || '',
+                            partnerPronouns: reqData.profileSnapshot.partnerPronouns || ''
+                          });
+                        }
+
                         // Success - proceed to coach selection
                         setSetupStep(3);
                       } catch (err) {
