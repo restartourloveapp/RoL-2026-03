@@ -2676,54 +2676,7 @@ function MainApp() {
                     <p className="text-[10px] text-stone-400">6-character code from your partner</p>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner's Email</label>
-                    <input 
-                      type="email"
-                      value={mainAccountEmail}
-                      onChange={(e) => {
-                        setMainAccountEmail(e.target.value);
-                        setConnectionCodeError(null);
-                      }}
-                      placeholder="partner@example.com"
-                      className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none"
-                    />
-                    <p className="text-[10px] text-stone-400">Email of the partner's account</p>
-                  </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner's Password</label>
-                    <input 
-                      type="password"
-                      value={mainAccountPassword}
-                      onChange={(e) => {
-                        setMainAccountPassword(e.target.value);
-                        setConnectionCodeError(null);
-                      }}
-                      placeholder="••••••••"
-                      className="w-full p-4 bg-stone-50 border border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none"
-                    />
-                    <p className="text-[10px] text-stone-400">Password to verify main account (encrypted, not stored)</p>
-                  </div>
-
-                  {connectionCodeError && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-2xl">
-                      <p className="text-sm text-red-900">{connectionCodeError}</p>
-                    </div>
-                  )}
-
-                  <div className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl border border-stone-100">
-                    <input 
-                      type="checkbox"
-                      id="confirmWipeout"
-                      checked={confirmedDataWipeout}
-                      onChange={(e) => setConfirmedDataWipeout(e.target.checked)}
-                      className="w-4 h-4 mt-1 cursor-pointer accent-emerald-600"
-                    />
-                    <label htmlFor="confirmWipeout" className="text-xs text-stone-600 cursor-pointer leading-relaxed">
-                      I understand that all my personal data on this device will be permanently deleted, and I accept the consequences.
-                    </label>
-                  </div>
                 </div>
 
                 <div className="h-px bg-stone-100" />
@@ -2734,8 +2687,6 @@ function MainApp() {
                       setAccountType(null);
                       setSetupStep(0);
                       setPartnerConnectionCode('');
-                      setMainAccountEmail('');
-                      setMainAccountPassword('');
                       setConnectionCodeError(null);
                       setConfirmedDataWipeout(false);
                     }}
@@ -2749,14 +2700,6 @@ function MainApp() {
                         setConnectionCodeError('Please enter a valid 6-character code');
                         return;
                       }
-                      if (!mainAccountEmail) {
-                        setConnectionCodeError('Please enter partner email');
-                        return;
-                      }
-                      if (!mainAccountPassword) {
-                        setConnectionCodeError('Please enter partner password');
-                        return;
-                      }
                       if (!confirmedDataWipeout) {
                         setConnectionCodeError('Please confirm you understand the data will be deleted');
                         return;
@@ -2764,33 +2707,29 @@ function MainApp() {
                       
                       setIsConnectingAsPartner(true);
                       try {
-                        // ✅ SECURITY: Verify main account password here
-                        let mainAccountIdToken: string;
-                        try {
-                          const authResponse = await signInWithEmailAndPassword(auth, mainAccountEmail, mainAccountPassword);
-                          mainAccountIdToken = await authResponse.user.getIdToken();
-                        } catch (authError: any) {
-                          setConnectionCodeError('Invalid email or password for main account');
+                        // Validate code exists in partner_requests
+                        const q = query(
+                          collection(db, 'partner_requests'),
+                          where('code', '==', partnerConnectionCode),
+                          where('status', '==', 'pending')
+                        );
+                        const snap = await getDocs(q);
+                        if (snap.empty) {
+                          setConnectionCodeError('Invalid or expired code. Ask your partner for a new one.');
                           setIsConnectingAsPartner(false);
                           return;
                         }
-                        
-                        const response = await fetch('/api/connect-as-partner-device', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            partnerAccountUid: user?.uid,
-                            connectionCode: partnerConnectionCode,
-                            mainAccountIdToken
-                          })
-                        });
-
-                        if (!response.ok) {
-                          const error = await response.json();
-                          setConnectionCodeError(error.error || 'Failed to connect');
+                        if (snap.docs[0].data().fromUid === user?.uid) {
+                          setConnectionCodeError('You cannot connect with your own code.');
+                          setIsConnectingAsPartner(false);
                           return;
                         }
-
+                        // Claim the code
+                        await updateDoc(doc(db, 'partner_requests', snap.docs[0].id), {
+                          respondentUid: user?.uid,
+                          respondentEmail: user?.email || '',
+                          status: 'claimed'
+                        });
                         // Success - proceed to coach selection
                         setSetupStep(3);
                       } catch (err) {
@@ -2800,7 +2739,7 @@ function MainApp() {
                         setIsConnectingAsPartner(false);
                       }
                     }}
-                    disabled={isConnectingAsPartner || !confirmedDataWipeout || !partnerConnectionCode || partnerConnectionCode.length !== 6 || !mainAccountEmail || !mainAccountPassword}
+                    disabled={isConnectingAsPartner || !confirmedDataWipeout || !partnerConnectionCode || partnerConnectionCode.length !== 6}
                     className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                   >
                     {isConnectingAsPartner ? (
