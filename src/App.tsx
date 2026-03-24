@@ -1397,24 +1397,22 @@ function MainApp() {
         return;
       }
 
-      // Use server-side delete endpoint for proper security and permissions handling
-      const response = await fetch('/api/delete-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          userId: user.uid
-        })
-      });
+      // Delete session and its subcollections client-side
+      const sessionRef = doc(db, 'sessions', sessionId);
+      const batch = writeBatch(db);
 
-      if (!response.ok) {
-        const error = await response.json();
-        showToast(error.error || t('sessions.alerts.deletionFailed'), 'error');
-        setSessionToDelete(null);
-        return;
-      }
+      // Delete messages subcollection
+      const messagesSnap = await getDocs(collection(db, 'sessions', sessionId, 'messages'));
+      messagesSnap.forEach(d => batch.delete(d.ref));
 
-      const data = await response.json();
+      // Delete message_summaries subcollection
+      const summariesSnap = await getDocs(collection(db, 'sessions', sessionId, 'message_summaries'));
+      summariesSnap.forEach(d => batch.delete(d.ref));
+
+      // Delete the session document itself
+      batch.delete(sessionRef);
+      await batch.commit();
+
       showToast(t('sessions.alerts.sessionDeleted'), 'success');
       setSessionToDelete(null);
       
