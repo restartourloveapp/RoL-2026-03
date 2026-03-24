@@ -34,6 +34,13 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ steps.config_step.outputs.PROJECT_ID }}
           VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_TEST }}
 
+      - name: Deploy Firestore Rules (Test)
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TEST }}' > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          npx firebase-tools deploy --only firestore:rules --project ${{ steps.config_step.outputs.PROJECT_ID }}
+          rm /tmp/sa.json
+
       - name: Deploy to Firebase Hosting (Test)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:

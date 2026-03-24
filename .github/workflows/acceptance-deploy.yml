@@ -34,6 +34,13 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID_ACC }}
           VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_ACC }}
 
+      - name: Deploy Firestore Rules (Acceptance)
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_ACC }}' > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          npx firebase-tools deploy --only firestore:rules --project ${{ secrets.FIREBASE_PROJECT_ID_ACC }}
+          rm /tmp/sa.json
+
       - name: Deploy to Firebase Hosting (Acceptance)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
