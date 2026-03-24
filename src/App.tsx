@@ -2700,10 +2700,6 @@ function MainApp() {
                         setConnectionCodeError('Please enter a valid 6-character code');
                         return;
                       }
-                      if (!confirmedDataWipeout) {
-                        setConnectionCodeError('Please confirm you understand the data will be deleted');
-                        return;
-                      }
                       
                       setIsConnectingAsPartner(true);
                       try {
@@ -2739,7 +2735,7 @@ function MainApp() {
                         setIsConnectingAsPartner(false);
                       }
                     }}
-                    disabled={isConnectingAsPartner || !confirmedDataWipeout || !partnerConnectionCode || partnerConnectionCode.length !== 6}
+                    disabled={isConnectingAsPartner || !partnerConnectionCode || partnerConnectionCode.length !== 6}
                     className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                   >
                     {isConnectingAsPartner ? (
