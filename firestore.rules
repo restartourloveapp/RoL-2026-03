@@ -45,100 +45,101 @@ service cloud.firestore {
              'iv' in val && val.iv is string;
     }
 
-    function isCoachName(val) {
-      return val in ['solin', 'kael', 'ravian', 'amari', 'leora'];
-    }
-
     // ===============================================================
     // COLLECTION RULES
     // ===============================================================
 
     // 📱 USERS - Profile data
     match /users/{uid} {
-      // Can read own profile or if admin
       allow read: if isAuthUser(uid) || isAdmin();
       
-      // Can create only own account with required fields
       allow create: if isAuthUser(uid) && 
                       request.resource.data.uid == uid &&
                       isEmail(request.resource.data.email) &&
-                      isString(request.resource.data.pinVerifier, 10, 256) &&
-                      isString(request.resource.data.pinSalt, 10, 128) &&
-                      isEncrypted(request.resource.data.wrappedCK) &&
                       isTimestamp(request.resource.data.createdAt);
       
-      // Can update own profile (but not immutable fields)
+      // Can update own profile (role is immutable from client)
       allow update: if isAuthUser(uid) && 
                       !request.resource.data.diff(resource.data).affectedKeys()
-                        .hasAny(['uid', 'email', 'pinVerifier', 'pinSalt', 'wrappedCK', 'createdAt', 'role']);
+                        .hasAny(['uid', 'email', 'createdAt', 'role']);
       
-      // Sub-collection: Session meta summaries
       match /session_meta_summaries/{summaryId} {
         allow read: if isAuthUser(uid) || isAdmin();
-        allow create: if isAuthUser(uid) && 
-                        isEncrypted(request.resource.data) &&
-                        isTimestamp(request.resource.data.createdAt);
+        allow create: if isAuthUser(uid);
         allow delete: if isAuthUser(uid) || isAdmin();
       }
     }
 
     // 💬 SESSIONS - Chat sessions
+    // Session-level rules use resource.data (required for list/query operations)
+    // Subcollection rules use get() to fetch parent session document
     match /sessions/{sessionId} {
-      // Fetch parent session data (works both at session level and subcollection level)
-      function sessionData() {
-        return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
-      }
       
-      // Check if current user is session owner
-      function isSessionOwner() {
-        return isAuth() && getAuth() == sessionData().ownerUid;
-      }
-      
-      // Check if current user is session partner
-      function isSessionPartner() {
-        return isAuth() && getAuth() == sessionData().get('partnerUid', '');
-      }
-      
-      // Check if current user is member of session
-      function isSessionMemberHere() {
-        return isSessionOwner() || isSessionPartner() || isAdmin();
-      }
-      
-      allow read: if isAuth() && isSessionMemberHere();
+      allow read: if isAuth() && (
+                    getAuth() == resource.data.ownerUid || 
+                    getAuth() == resource.data.get('partnerUid', '') || 
+                    isAdmin()
+                  );
       
       allow create: if isAuth() && 
                       getAuth() == request.resource.data.ownerUid &&
-                      isString(request.resource.data.ownerProfileId, 1, 128) &&
                       request.resource.data.type in ['personal', 'couple'] &&
                       request.resource.data.status in ['active', 'archived', 'closed', 'summary_pending', 'beeindigd'] &&
-                      isEncrypted(request.resource.data.wrappedSSK) &&
                       isTimestamp(request.resource.data.createdAt);
       
-      allow update: if isAuth() && isSessionMemberHere() &&
-                      resource.data.ownerUid == request.resource.data.ownerUid &&
-                      resource.data.createdAt == request.resource.data.createdAt;
+      allow update: if isAuth() && (
+                      getAuth() == resource.data.ownerUid || 
+                      getAuth() == resource.data.get('partnerUid', '') || 
+                      isAdmin()
+                    ) &&
+                    resource.data.ownerUid == request.resource.data.ownerUid &&
+                    resource.data.createdAt == request.resource.data.createdAt;
       
-      allow delete: if isAuth() && (isSessionOwner() || isAdmin());
+      allow delete: if isAuth() && (
+                      getAuth() == resource.data.ownerUid || isAdmin()
+                    );
       
-      // Sub-collection: Messages
+      // --- Subcollection: Messages ---
+      // Uses get() to check parent session membership
       match /messages/{messageId} {
-        allow read: if isAuth() && isSessionMemberHere();
-        allow create: if isAuth() && isSessionMemberHere() &&
-                         isString(request.resource.data.content, 1, 10000) &&
-                         request.resource.data.senderUid == getAuth() &&
+        function parentSession() {
+          return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
+        }
+        function isMessageSessionMember() {
+          return getAuth() == parentSession().ownerUid || 
+                 getAuth() == parentSession().get('partnerUid', '') || 
+                 isAdmin();
+        }
+        
+        allow read: if isAuth() && isMessageSessionMember();
+        
+        // senderUid can be auth user OR 'ai_coach' (AI responses sent from client)
+        allow create: if isAuth() && isMessageSessionMember() &&
+                         (request.resource.data.senderUid == getAuth() || 
+                          request.resource.data.senderUid == 'ai_coach') &&
                          isTimestamp(request.resource.data.createdAt);
-        allow delete: if isAuth() && (isSessionOwner() || isAdmin());
+        
+        allow delete: if isAuth() && (
+                        getAuth() == parentSession().ownerUid || isAdmin()
+                      );
       }
       
-      // Sub-collection: Message summaries
+      // --- Subcollection: Message Summaries ---
       match /message_summaries/{summaryId} {
-        allow read: if isAuth() && isSessionMemberHere();
-        allow create: if isAuth() && isSessionMemberHere() &&
-                         isEncrypted(request.resource.data) &&
-                         request.resource.data.startMessageIndex is int &&
-                         request.resource.data.endMessageIndex is int &&
-                         isTimestamp(request.resource.data.createdAt);
-        allow delete: if isAuth() && (isSessionOwner() || isAdmin());
+        function parentSessionForSummary() {
+          return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
+        }
+        function isSummarySessionMember() {
+          return getAuth() == parentSessionForSummary().ownerUid || 
+                 getAuth() == parentSessionForSummary().get('partnerUid', '') || 
+                 isAdmin();
+        }
+        
+        allow read: if isAuth() && isSummarySessionMember();
+        allow create: if isAuth() && isSummarySessionMember();
+        allow delete: if isAuth() && (
+                        getAuth() == parentSessionForSummary().ownerUid || isAdmin()
+                      );
       }
     }
 
@@ -156,116 +157,98 @@ service cloud.firestore {
                       request.resource.data.status == 'pending' &&
                       isTimestamp(request.resource.data.createdAt);
       
-      allow update: if isAuth() && (getAuth() == resource.data.fromUid || isAdmin()) &&
-                      resource.data.fromUid == request.resource.data.fromUid &&
-                      resource.data.createdAt == request.resource.data.createdAt;
+      // Both sender and recipient can update (recipient needs to accept/reject)
+      allow update: if isAuth() && (
+                      getAuth() == resource.data.fromUid || 
+                      request.auth.token.email == resource.data.toEmail ||
+                      isAdmin()
+                    ) &&
+                    resource.data.fromUid == request.resource.data.fromUid &&
+                    resource.data.createdAt == request.resource.data.createdAt;
     }
 
     // 📅 TIMELINE - Session milestones & insights
     match /timeline/{entryId} {
-      function isTimelineOwner() {
-        return isAuth() && getAuth() == resource.data.ownerUid;
-      }
+      allow read: if isAuth() && (
+                    getAuth() == resource.data.ownerUid || 
+                    getAuth() == resource.data.get('partnerUid', '') || 
+                    isAdmin()
+                  );
       
-      function isTimelinePartner() {
-        return isAuth() && getAuth() == resource.data.get('partnerUid', '');
-      }
-      
-      function isTimelineMember() {
-        return isTimelineOwner() || isTimelinePartner() || isAdmin();
-      }
-      
-      allow read: if isAuth() && isTimelineMember();
-      
-      allow create: if isAuth() &&
-                      getAuth() == request.resource.data.ownerUid &&
-                      isString(request.resource.data.title, 1, 1000) &&
-                      isString(request.resource.data.description, 1, 10000) &&
+      // Title and description are encrypted maps (ciphertext + iv), not plain strings
+      allow create: if isAuth() && getAuth() == request.resource.data.ownerUid &&
                       request.resource.data.type in ['milestone', 'insight', 'breakthrough'] &&
                       isTimestamp(request.resource.data.createdAt);
       
-      allow update: if isAuth() && isTimelineMember() &&
-                      resource.data.ownerUid == request.resource.data.ownerUid &&
-                      resource.data.createdAt == request.resource.data.createdAt;
+      allow update: if isAuth() && (
+                      getAuth() == resource.data.ownerUid || 
+                      getAuth() == resource.data.get('partnerUid', '') || 
+                      isAdmin()
+                    );
       
-      allow delete: if isAuth() && (isTimelineOwner() || isTimelinePartner() || isAdmin());
+      allow delete: if isAuth() && (
+                      getAuth() == resource.data.ownerUid || 
+                      getAuth() == resource.data.get('partnerUid', '') || 
+                      isAdmin()
+                    );
     }
 
     // 📝 HOMEWORK - Assigned tasks
     match /homework/{taskId} {
-      function isHomeworkOwner() {
-        return isAuth() && getAuth() == resource.data.ownerUid;
-      }
+      allow read: if isAuth() && (
+                    getAuth() == resource.data.ownerUid || 
+                    getAuth() == resource.data.get('partnerUid', '') || 
+                    isAdmin()
+                  );
       
-      function isHomeworkPartner() {
-        return isAuth() && getAuth() == resource.data.get('partnerUid', '');
-      }
-      
-      function isHomeworkMember() {
-        return isHomeworkOwner() || isHomeworkPartner() || isAdmin();
-      }
-      
-      allow read: if isAuth() && isHomeworkMember();
-      
-      allow create: if isAuth() &&
-                      getAuth() == request.resource.data.ownerUid &&
-                      isString(request.resource.data.title, 1, 1000) &&
-                      isString(request.resource.data.description, 1, 10000) &&
+      allow create: if isAuth() && getAuth() == request.resource.data.ownerUid &&
                       request.resource.data.status in ['assigned', 'completed', 'skipped'] &&
                       isTimestamp(request.resource.data.createdAt);
       
-      allow update: if isAuth() && isHomeworkMember() &&
-                      resource.data.ownerUid == request.resource.data.ownerUid &&
-                      resource.data.createdAt == request.resource.data.createdAt;
+      allow update: if isAuth() && (
+                      getAuth() == resource.data.ownerUid || 
+                      getAuth() == resource.data.get('partnerUid', '') || 
+                      isAdmin()
+                    );
       
-      allow delete: if isAuth() && (isHomeworkOwner() || isHomeworkPartner() || isAdmin());
+      allow delete: if isAuth() && (
+                      getAuth() == resource.data.ownerUid || 
+                      getAuth() == resource.data.get('partnerUid', '') || 
+                      isAdmin()
+                    );
     }
 
-    // 🎫 SUPPORT TICKETS - Admin support
+    // 🎫 SUPPORT TICKETS
     match /tickets/{ticketId} {
       allow read: if isAuth() && (getAuth() == resource.data.userUid || isAdmin());
-      
-      allow create: if isAuth() && 
-                      getAuth() == request.resource.data.userUid &&
-                      isString(request.resource.data.subject, 1, 200) &&
-                      isString(request.resource.data.description, 1, 2000) &&
+      allow create: if isAuth() && getAuth() == request.resource.data.userUid &&
                       isTimestamp(request.resource.data.createdAt);
-      
-      allow update: if isAdmin() &&
-                      resource.data.userUid == request.resource.data.userUid &&
-                      resource.data.createdAt == request.resource.data.createdAt;
-      
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // 🆘 CRISIS RESOURCES - Public safety resources
+    // 🆘 CRISIS RESOURCES - Publicly readable safety resources
     match /crisis_resources/{resourceId} {
-      allow read: if true; // Publicly readable
+      allow read: if true;
       allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // 🔗 PARTNER TOKENS - Server-side token generation (NOT readable from client)
+    // 🔗 PARTNER TOKENS - Server-side only
     match /partnerTokens/{tokenId} {
-      allow read: if false;
-      allow create: if false; // Created by server API
-      allow update: if false; // Updated by server API
-      allow delete: if isAdmin();
+      allow read, write: if false;
     }
 
-    // 🔐 PARTNER CONNECTION CODES - Server-side auth codes (NOT readable from client)
+    // 🔐 PARTNER CONNECTION CODES - Server-side only
     match /partnerConnectionCodes/{codeId} {
-      allow read: if false;
-      allow create: if false; // Created by server API
-      allow update: if false; // Updated by server API
-      allow delete: if isAdmin();
+      allow read, write: if false;
     }
 
-    // 📋 AUDIT LOGS - Server-side logging (NOT writable from client)
+    // 📋 AUDIT LOGS - Server-side only
     match /auditLogs/{logId} {
       allow read: if isAdmin();
-      allow write: if false; // Only server can write
+      allow write: if false;
     }
 
     // DEFAULT DENY
