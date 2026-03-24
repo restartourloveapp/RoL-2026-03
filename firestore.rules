@@ -84,14 +84,19 @@ service cloud.firestore {
 
     // 💬 SESSIONS - Chat sessions
     match /sessions/{sessionId} {
+      // Fetch parent session data (works both at session level and subcollection level)
+      function sessionData() {
+        return get(/databases/$(database)/documents/sessions/$(sessionId)).data;
+      }
+      
       // Check if current user is session owner
       function isSessionOwner() {
-        return isAuth() && getAuth() == resource.data.ownerUid;
+        return isAuth() && getAuth() == sessionData().ownerUid;
       }
       
       // Check if current user is session partner
       function isSessionPartner() {
-        return isAuth() && getAuth() == resource.data.get('partnerUid', '');
+        return isAuth() && getAuth() == sessionData().get('partnerUid', '');
       }
       
       // Check if current user is member of session
