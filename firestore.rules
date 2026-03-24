@@ -143,25 +143,30 @@ service cloud.firestore {
       }
     }
 
-    // 🤝 PARTNER REQUESTS
+    // 🤝 PARTNER REQUESTS (code-based linking)
     match /partner_requests/{requestId} {
+      // Creator can read their own requests, respondent can read claimed ones
       allow read: if isAuth() && (
                     getAuth() == resource.data.fromUid ||
-                    request.auth.token.email == resource.data.toEmail ||
+                    getAuth() == resource.data.get('respondentUid', '') ||
                     isAdmin()
                   );
       
+      // Anyone can list by code+status (to claim a code) or by fromUid/respondentUid
+      allow list: if isAuth();
+      
+      // Creator generates a code (status must be 'pending')
       allow create: if isAuth() && 
                       getAuth() == request.resource.data.fromUid &&
-                      isEmail(request.resource.data.toEmail) &&
                       request.resource.data.status == 'pending' &&
                       isTimestamp(request.resource.data.createdAt);
       
-      // Both sender and recipient can update (recipient needs to accept/reject)
+      // Anyone authenticated can update (claim with respondentUid, or creator accepts/rejects)
       allow update: if isAuth() && (
                       getAuth() == resource.data.fromUid || 
-                      request.auth.token.email == resource.data.toEmail ||
-                      isAdmin()
+                      getAuth() == resource.data.get('respondentUid', '') ||
+                      // Allow claiming: status changes from pending to claimed
+                      (resource.data.status == 'pending' && request.resource.data.status == 'claimed')
                     ) &&
                     resource.data.fromUid == request.resource.data.fromUid &&
                     resource.data.createdAt == request.resource.data.createdAt;
