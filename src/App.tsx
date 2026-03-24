@@ -1688,9 +1688,11 @@ function MainApp() {
       const encrypted = await Encryption.encryptText(text, activeSSK);
 
       const senderUid = user!.uid; // Always save the user account owner
-      // CRITICAL: Use the logged-in user's profileId, not AI's predicted speaker
-      // The person typing is defined by who is logged in, not by AI's nextSpeaker
-      const senderProfileId = profile?.profileId;
+      // Use selectedSpeakerUid for couple sessions (tracks who is currently speaking)
+      // Falls back to profile.profileId for personal sessions or if not set
+      const senderProfileId = (activeSession.type === 'couple' && selectedSpeakerUid) 
+        ? selectedSpeakerUid 
+        : profile?.profileId;
 
       await addDoc(collection(db, 'sessions', activeSession.id, 'messages'), {
         senderUid,
@@ -4132,7 +4134,7 @@ function MainApp() {
                           }
                         }}
                         placeholder={activeSession.type === 'couple' 
-                          ? `${selectedSpeakerUid === user.uid 
+                          ? `${selectedSpeakerUid === profile?.profileId 
                               ? (decryptedProfile.name || t('chat.you'))
                               : (decryptedProfile.partnerName || t('chat.partner'))}: ${t('sessions.messagePlaceholder')}`
                           : t('sessions.messagePlaceholder')}
