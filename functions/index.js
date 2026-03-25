@@ -69,7 +69,6 @@ exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated("partner_requests/{
     "partnerName",
     "partnerPronouns",
     "defaultCoupleCoach",
-    "personalCoach",
     "subscriptionTier",
     "language",
     "profileId",

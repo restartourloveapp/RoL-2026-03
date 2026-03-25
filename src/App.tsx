@@ -99,7 +99,9 @@ interface UserProfile {
   subscriptionTier: 'free' | 'premium';
   partnerUid?: string;
   partnerId?: string; // Unique ID of the partner person
-  role?: 'user' | 'admin';
+  role?: 'user' | 'admin' | 'partner';
+  accountType?: 'own' | 'partner';
+  mainAccountUid?: string;
   language?: Language;
   createdAt?: any;
   updatedAt?: any;
@@ -371,6 +373,7 @@ function MainApp() {
   }>({});
 
   const isAdmin = profile?.role === 'admin';
+  const isPartnerAccount = profile?.accountType === 'partner' || profile?.role === 'partner' || !!profile?.mainAccountUid;
   const [partnerRequests, setPartnerRequests] = useState<PartnerRequest[]>([]);
   const [linkCode, setLinkCode] = useState<string | null>(null);
   const [linkCodeInput, setLinkCodeInput] = useState('');
@@ -518,11 +521,11 @@ function MainApp() {
           partnerPronouns: mappedPartnerPronouns
         });
 
-        // Pre-fill inputs if they are empty
-        if (!profileNameInput) setProfileNameInput(name);
-        if (!profilePronounsInput) setProfilePronounsInput(mappedPronouns);
-        if (!partnerNameInput) setPartnerNameInput(partnerName);
-        if (!partnerPronounsInput) setPartnerPronounsInput(mappedPartnerPronouns);
+        // For partner accounts, keep couple-level fields synced from main account updates.
+        if (isPartnerAccount || !profileNameInput) setProfileNameInput(name);
+        if (isPartnerAccount || !profilePronounsInput) setProfilePronounsInput(mappedPronouns);
+        if (isPartnerAccount || !partnerNameInput) setPartnerNameInput(partnerName);
+        if (isPartnerAccount || !partnerPronounsInput) setPartnerPronounsInput(mappedPartnerPronouns);
         if (profile.defaultCoupleCoach) {
           setDefaultCoachInput(profile.defaultCoupleCoach);
           setNewSessionConfig(prev => ({ ...prev, persona: profile.defaultCoupleCoach as AI.CoachPersona }));
@@ -541,7 +544,7 @@ function MainApp() {
     };
 
     decryptProfile();
-  }, [profile, ck]);
+  }, [profile, ck, isPartnerAccount]);
 
   // --- Partner Request Listener ---
   useEffect(() => {
@@ -1080,23 +1083,26 @@ function MainApp() {
     }
     setIsProfileSaving(true);
     try {
-      console.log("Encrypting profile data...");
-      const encryptedName = await Encryption.encryptText(profileNameInput, ck);
-      const encryptedPronouns = await Encryption.encryptText(profilePronounsInput, ck);
-      const encryptedPartnerName = await Encryption.encryptText(partnerNameInput, ck);
-      const encryptedPartnerPronouns = await Encryption.encryptText(partnerPronounsInput, ck);
-
       const path = `users/${user.uid}`;
       const updateData: any = {
-        profileName: encryptedName,
-        profilePronouns: encryptedPronouns,
-        partnerName: encryptedPartnerName,
-        partnerPronouns: encryptedPartnerPronouns,
-        defaultCoupleCoach: defaultCoachInput,
         personalCoach: personalCoachInput,
-        accountType: accountType || 'own', // ✅ FEATURE: Store account type
         updatedAt: serverTimestamp()
       };
+
+      if (!isPartnerAccount) {
+        console.log("Encrypting profile data...");
+        const encryptedName = await Encryption.encryptText(profileNameInput, ck);
+        const encryptedPronouns = await Encryption.encryptText(profilePronounsInput, ck);
+        const encryptedPartnerName = await Encryption.encryptText(partnerNameInput, ck);
+        const encryptedPartnerPronouns = await Encryption.encryptText(partnerPronounsInput, ck);
+
+        updateData.profileName = encryptedName;
+        updateData.profilePronouns = encryptedPronouns;
+        updateData.partnerName = encryptedPartnerName;
+        updateData.partnerPronouns = encryptedPartnerPronouns;
+        updateData.defaultCoupleCoach = defaultCoachInput;
+        updateData.accountType = accountType || 'own';
+      }
 
       console.log("Updating Firestore document:", path);
       try {
@@ -1107,12 +1113,14 @@ function MainApp() {
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
 
-      setDecryptedProfile({
-        name: profileNameInput,
-        pronouns: profilePronounsInput,
-        partnerName: partnerNameInput,
-        partnerPronouns: partnerPronounsInput
-      });
+      if (!isPartnerAccount) {
+        setDecryptedProfile({
+          name: profileNameInput,
+          pronouns: profilePronounsInput,
+          partnerName: partnerNameInput,
+          partnerPronouns: partnerPronounsInput
+        });
+      }
 
       showToast(t('settings.alerts.profileUpdated'), 'success');
     } catch (e) {
@@ -3529,6 +3537,15 @@ function MainApp() {
                   </div>
                 </div>
 
+                {isPartnerAccount && (
+                  <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl space-y-1">
+                    <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Partner Account</p>
+                    <p className="text-xs text-stone-600">
+                      Dit account is gekoppeld aan het hoofdaccount. Koppelinstellingen (profiel + koppelcoach) zijn alleen bewerkbaar vanuit het hoofdaccount en worden hier alleen getoond.
+                    </p>
+                  </div>
+                )}
+
                 <div className="pt-4 border-t border-stone-100 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-stone-600">{t('settings.subscription')}</span>
@@ -3564,7 +3581,13 @@ function MainApp() {
                           type="text"
                           value={profileNameInput}
                           onChange={(e) => setProfileNameInput(e.target.value)}
-                          className="w-full p-3 bg-stone-50 border border-stone-100 rounded-xl text-sm focus:border-emerald-500 focus:outline-none"
+                          disabled={isPartnerAccount}
+                          className={cn(
+                            "w-full p-3 border rounded-xl text-sm",
+                            isPartnerAccount
+                              ? "bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed"
+                              : "bg-stone-50 border-stone-100 focus:border-emerald-500 focus:outline-none"
+                          )}
                         />
                       </div>
                       <div className="space-y-1">
@@ -3575,7 +3598,13 @@ function MainApp() {
                         <select 
                           value={profilePronounsInput}
                           onChange={(e) => setProfilePronounsInput(e.target.value)}
-                          className="w-full p-3 bg-stone-50 border border-stone-100 rounded-xl text-sm focus:border-emerald-500 focus:outline-none appearance-none"
+                          disabled={isPartnerAccount}
+                          className={cn(
+                            "w-full p-3 border rounded-xl text-sm appearance-none",
+                            isPartnerAccount
+                              ? "bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed"
+                              : "bg-stone-50 border-stone-100 focus:border-emerald-500 focus:outline-none"
+                          )}
                         >
                           <option value="">{t('common.select')}</option>
                           <option value="he">{t('profile.pronounsOptions.he')}</option>
@@ -3592,7 +3621,13 @@ function MainApp() {
                           type="text"
                           value={partnerNameInput}
                           onChange={(e) => setPartnerNameInput(e.target.value)}
-                          className="w-full p-3 bg-stone-50 border border-stone-100 rounded-xl text-sm focus:border-emerald-500 focus:outline-none"
+                          disabled={isPartnerAccount}
+                          className={cn(
+                            "w-full p-3 border rounded-xl text-sm",
+                            isPartnerAccount
+                              ? "bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed"
+                              : "bg-stone-50 border-stone-100 focus:border-emerald-500 focus:outline-none"
+                          )}
                         />
                       </div>
                       <div className="space-y-1">
@@ -3603,7 +3638,13 @@ function MainApp() {
                         <select 
                           value={partnerPronounsInput}
                           onChange={(e) => setPartnerPronounsInput(e.target.value)}
-                          className="w-full p-3 bg-stone-50 border border-stone-100 rounded-xl text-sm focus:border-emerald-500 focus:outline-none appearance-none"
+                          disabled={isPartnerAccount}
+                          className={cn(
+                            "w-full p-3 border rounded-xl text-sm appearance-none",
+                            isPartnerAccount
+                              ? "bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed"
+                              : "bg-stone-50 border-stone-100 focus:border-emerald-500 focus:outline-none"
+                          )}
                         >
                           <option value="">{t('common.select')}</option>
                           <option value="he">{t('profile.pronounsOptions.he')}</option>
@@ -3620,12 +3661,21 @@ function MainApp() {
                         <select 
                           value={defaultCoachInput}
                           onChange={(e) => setDefaultCoachInput(e.target.value as AI.CoachPersona)}
-                          className="w-full p-3 bg-stone-50 border border-stone-100 rounded-xl text-sm focus:border-emerald-500 focus:outline-none"
+                          disabled={isPartnerAccount}
+                          className={cn(
+                            "w-full p-3 border rounded-xl text-sm",
+                            isPartnerAccount
+                              ? "bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed"
+                              : "bg-stone-50 border-stone-100 focus:border-emerald-500 focus:outline-none"
+                          )}
                         >
                           {getCoachesList().map(c => (
                             <option key={c.id} value={c.id}>{t(`sessions.personas.${c.id}.name`)} ({t(`sessions.personas.${c.id}.title`)})</option>
                           ))}
                         </select>
+                        {isPartnerAccount && (
+                          <p className="text-[10px] text-stone-400">Koppelcoach wordt beheerd door het hoofdaccount.</p>
+                        )}
                       </div>
 
                       <div className="space-y-1">
@@ -3648,7 +3698,7 @@ function MainApp() {
                       className="w-full py-3 bg-stone-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
                     >
                       <Save className="w-4 h-4" />
-                      {isProfileSaving ? t('common.loading') : t('profile.saveProfile')}
+                      {isProfileSaving ? t('common.loading') : (isPartnerAccount ? 'Sla eigen coach op' : t('profile.saveProfile'))}
                     </button>
                   </div>
                   
