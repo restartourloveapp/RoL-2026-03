@@ -4,7 +4,10 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated("partner_requests/{requestId}", async (event) => {
+exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated({
+  document: "partner_requests/{requestId}",
+  region: "europe-west1",
+}, async (event) => {
   const before = event.data.before.data();
   const after = event.data.after.data();
 
