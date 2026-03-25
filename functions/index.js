@@ -172,9 +172,22 @@ exports.forcePartnerSettingsSync = onCall({
   }
 
   const partnerData = partnerSnap.data() || {};
-  const mainUid = partnerData.mainAccountUid;
+  let mainUid = partnerData.mainAccountUid || partnerData.partnerUid || null;
+
+  // Legacy fallback: resolve main account by reverse relationship lookup.
   if (!mainUid) {
-    throw new HttpsError("failed-precondition", "This account is not linked as a partner account.");
+    const reverseSnap = await db.collection("users")
+      .where("partnerUid", "==", uid)
+      .limit(1)
+      .get();
+    if (!reverseSnap.empty) {
+      mainUid = reverseSnap.docs[0].id;
+    }
+  }
+
+  // Do not fail hard for partially linked states; just return a soft result.
+  if (!mainUid || mainUid === uid) {
+    return { success: false, reason: "not-linked" };
   }
 
   await syncSharedMainToPartner(mainUid, uid, "callable_fallback");
