@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { 
+import app, { 
   auth, db, storage
 } from './firebase';
 import AdminDashboard from './AdminDashboard';
@@ -14,6 +14,7 @@ import {
   signInWithEmailAndPassword,
   sendEmailVerification
 } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
   doc, 
   getDoc, 
@@ -545,6 +546,32 @@ function MainApp() {
 
     decryptProfile();
   }, [profile, ck, isPartnerAccount]);
+
+  // --- Partner Settings Fallback Sync ---
+  // If partner settings are stale, force a server-side sync when opening Settings.
+  useEffect(() => {
+    if (!user || !isPinVerified || !isPartnerAccount || view !== 'settings') return;
+
+    let cancelled = false;
+
+    const forceSync = async () => {
+      try {
+        const functions = getFunctions(app, 'europe-west1');
+        const callSync = httpsCallable(functions, 'forcePartnerSettingsSync');
+        await callSync({});
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Partner fallback sync failed:', error);
+        }
+      }
+    };
+
+    forceSync();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, isPinVerified, isPartnerAccount, view]);
 
   // --- Partner Request Listener ---
   useEffect(() => {

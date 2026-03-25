@@ -1,4 +1,5 @@
 const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
@@ -154,4 +155,39 @@ exports.syncPartnerProfileOnMainProfileUpdate = onDocumentUpdated({
   });
 
   logger.info("Partner profile sync (main update) completed", { mainUid, partnerUid });
+});
+
+exports.forcePartnerSettingsSync = onCall({
+  region: "europe-west1",
+}, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const db = admin.firestore();
+  const partnerSnap = await db.collection("users").doc(uid).get();
+  if (!partnerSnap.exists) {
+    throw new HttpsError("not-found", "Partner profile not found.");
+  }
+
+  const partnerData = partnerSnap.data() || {};
+  const mainUid = partnerData.mainAccountUid;
+  if (!mainUid) {
+    throw new HttpsError("failed-precondition", "This account is not linked as a partner account.");
+  }
+
+  await syncSharedMainToPartner(mainUid, uid, "callable_fallback");
+
+  await db.collection("auditLogs").add({
+    userId: uid,
+    action: "partner_profile_sync_forced_from_settings",
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    details: {
+      mainUid,
+      trigger: "callable",
+    },
+  });
+
+  return { success: true, mainUid };
 });
