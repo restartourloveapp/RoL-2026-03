@@ -34,6 +34,16 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ steps.config_step.outputs.PROJECT_ID }}
           VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_TEST }}
 
+      - name: Install Functions Dependencies (Test)
+        run: npm ci --prefix functions
+
+      - name: Deploy Firebase Functions (Test)
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TEST }}' > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          npx firebase-tools deploy --only functions --project ${{ steps.config_step.outputs.PROJECT_ID }}
+          rm /tmp/sa.json
+
       - name: Deploy Firestore Rules (Test)
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TEST }}' > /tmp/sa.json
