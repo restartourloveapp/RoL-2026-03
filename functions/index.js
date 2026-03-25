@@ -4,6 +4,63 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
+const copyFields = [
+  "pinSalt",
+  "pinVerifier",
+  "wrappedCK",
+  "exchangePublicKey",
+  "wrappedExchangePrivateKey",
+  "wrappedRK",
+  "profileName",
+  "profilePronouns",
+  "partnerName",
+  "partnerPronouns",
+  "defaultCoupleCoach",
+  "subscriptionTier",
+  "language",
+  "profileId",
+  "partnerId",
+];
+
+async function syncSharedMainToPartner(mainUid, partnerUid, requestId = null) {
+  if (!mainUid || !partnerUid || mainUid === partnerUid) {
+    return;
+  }
+
+  const db = admin.firestore();
+  const mainRef = db.collection("users").doc(mainUid);
+  const partnerRef = db.collection("users").doc(partnerUid);
+  const [mainSnap, partnerSnap] = await Promise.all([mainRef.get(), partnerRef.get()]);
+
+  if (!mainSnap.exists || !partnerSnap.exists) {
+    logger.warn("Skipping sync: main or partner profile missing", { mainUid, partnerUid, requestId });
+    return;
+  }
+
+  const main = mainSnap.data() || {};
+  const partnerUpdate = {
+    mainAccountUid: mainUid,
+    accountType: "partner",
+    role: "partner",
+    partnerUid: mainUid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  for (const field of copyFields) {
+    if (main[field] !== undefined) {
+      partnerUpdate[field] = main[field];
+    }
+  }
+
+  const batch = db.batch();
+  batch.update(partnerRef, partnerUpdate);
+  batch.update(mainRef, {
+    partnerUid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
+}
+
 exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated({
   document: "partner_requests/{requestId}",
   region: "europe-west1",
@@ -34,67 +91,11 @@ exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated({
   }
 
   const db = admin.firestore();
-  const mainRef = db.collection("users").doc(mainUid);
-  const partnerRef = db.collection("users").doc(partnerUid);
+  await syncSharedMainToPartner(mainUid, partnerUid, event.params.requestId);
 
-  const [mainSnap, partnerSnap] = await Promise.all([mainRef.get(), partnerRef.get()]);
-
-  if (!mainSnap.exists) {
-    logger.error("Main account not found for accepted partner link", { mainUid, requestId: event.params.requestId });
-    return;
-  }
-
-  if (!partnerSnap.exists) {
-    logger.error("Partner account not found for accepted partner link", { partnerUid, requestId: event.params.requestId });
-    return;
-  }
-
-  const main = mainSnap.data() || {};
-
-  // Copy encrypted profile + key material directly, no decrypt/re-encrypt.
-  const partnerUpdate = {
-    mainAccountUid: mainUid,
-    accountType: "partner",
-    role: "partner",
-    partnerUid: mainUid,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  };
-
-  const copyFields = [
-    "pinSalt",
-    "pinVerifier",
-    "wrappedCK",
-    "exchangePublicKey",
-    "wrappedExchangePrivateKey",
-    "wrappedRK",
-    "profileName",
-    "profilePronouns",
-    "partnerName",
-    "partnerPronouns",
-    "defaultCoupleCoach",
-    "subscriptionTier",
-    "language",
-    "profileId",
-    "partnerId",
-  ];
-
-  for (const field of copyFields) {
-    if (main[field] !== undefined) {
-      partnerUpdate[field] = main[field];
-    }
-  }
-
-  const batch = db.batch();
-  batch.update(partnerRef, partnerUpdate);
-  batch.update(mainRef, {
-    partnerUid,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  batch.update(event.data.after.ref, {
+  await event.data.after.ref.update({
     syncedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-
-  await batch.commit();
 
   await db.collection("auditLogs").add({
     userId: mainUid,
@@ -112,4 +113,45 @@ exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated({
     mainUid,
     partnerUid,
   });
+});
+
+exports.syncPartnerProfileOnMainProfileUpdate = onDocumentUpdated({
+  document: "users/{userId}",
+  region: "europe-west1",
+}, async (event) => {
+  const before = event.data.before.data() || {};
+  const after = event.data.after.data() || {};
+  const mainUid = event.params.userId;
+
+  // Sync only from main/owner account docs, never from partner docs.
+  const isPartnerDoc = after.accountType === "partner" || after.role === "partner" || !!after.mainAccountUid;
+  if (isPartnerDoc) {
+    return;
+  }
+
+  const partnerUid = after.partnerUid;
+  if (!partnerUid) {
+    return;
+  }
+
+  // Avoid unnecessary writes if no shared field changed and partner link is unchanged.
+  const tracked = ["partnerUid", ...copyFields];
+  const changed = tracked.some((field) => JSON.stringify(before[field]) !== JSON.stringify(after[field]));
+  if (!changed) {
+    return;
+  }
+
+  await syncSharedMainToPartner(mainUid, partnerUid);
+
+  await admin.firestore().collection("auditLogs").add({
+    userId: mainUid,
+    action: "partner_profile_synced_on_main_profile_update",
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    details: {
+      partnerUid,
+      trigger: "users_on_update",
+    },
+  });
+
+  logger.info("Partner profile sync (main update) completed", { mainUid, partnerUid });
 });

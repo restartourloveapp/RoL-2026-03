@@ -1204,28 +1204,35 @@ function MainApp() {
   const handleAcceptPartnerRequest = async (req: PartnerRequest) => {
     if (!user || !exchangeKey || !kek) return;
     try {
-      // 1. Fetch sender's public key
-      const senderSnap = await getDoc(doc(db, 'users', req.fromUid));
-      if (!senderSnap.exists()) throw new Error("Sender profile not found");
-      const senderProfile = senderSnap.data() as UserProfile;
+      const partnerUid = req.respondentUid;
+      if (!partnerUid) {
+        showToast('Partner request is incomplete (missing respondent).', 'error');
+        return;
+      }
+      if (partnerUid === user.uid) {
+        showToast('Cannot accept your own request as partner.', 'error');
+        return;
+      }
+
+      // 1. Fetch partner public key (respondent account)
+      const partnerSnap = await getDoc(doc(db, 'users', partnerUid));
+      if (!partnerSnap.exists()) throw new Error("Partner profile not found");
+      const partnerProfile = partnerSnap.data() as UserProfile;
 
       // 2. Derive Shared Secret (Relationship Key)
-      const remotePubKey = await Encryption.importPublicKey(senderProfile.exchangePublicKey);
+      const remotePubKey = await Encryption.importPublicKey(partnerProfile.exchangePublicKey);
       const sharedSecret = await Encryption.deriveSharedSecret(exchangeKey, remotePubKey);
       const wrappedRk = await Encryption.wrapKey(sharedSecret, kek);
 
       // 3. Update request status
       await updateDoc(doc(db, 'partner_requests', req.id), { status: 'accepted' });
 
-      // 4. Update both user profiles
+      // 4. Store local main-account link material.
+      // Cloud Function performs canonical cross-account sync.
       await updateDoc(doc(db, 'users', user.uid), { 
-        partnerUid: req.fromUid,
+        partnerUid,
         wrappedRK: wrappedRk
       });
-      
-      // Note: The sender will need to derive their RK when they see the acceptance
-      // We'll add an effect for that.
-      await updateDoc(doc(db, 'users', req.fromUid), { partnerUid: user.uid });
 
       setRk(sharedSecret);
       showToast(t('auth.alerts.partnerLinked'), 'success');
