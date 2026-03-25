@@ -46,14 +46,14 @@ jobs:
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}' > /tmp/sa.json
           export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
-          npx firebase-tools deploy --only functions --project ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+          npx --no-install firebase-tools deploy --only functions --project ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
           rm /tmp/sa.json
 
       - name: Deploy Firestore Rules (Production)
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}' > /tmp/sa.json
           export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
-          npx firebase-tools deploy --only firestore:rules --project ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+          npx --no-install firebase-tools deploy --only firestore:rules --project ${{ secrets.FIREBASE_PROJECT_ID_PROD }}
           rm /tmp/sa.json
 
       - name: Deploy to Firebase Hosting (Production)
