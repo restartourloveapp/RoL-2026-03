@@ -41,7 +41,7 @@ jobs:
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TEST }}' > /tmp/sa.json
           export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
-          npx --no-install firebase-tools deploy --only functions --project ${{ steps.config_step.outputs.PROJECT_ID }}
+          npx --no-install firebase-tools deploy --only functions --force --project ${{ steps.config_step.outputs.PROJECT_ID }}
           rm /tmp/sa.json
 
       - name: Deploy Firestore Rules (Test)
