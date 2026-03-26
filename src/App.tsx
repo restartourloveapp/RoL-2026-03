@@ -4216,6 +4216,22 @@ function MainApp() {
                             : `Gekoppeld aan partneraccount: ${linkedAccountSummary?.linkedDisplayName || '-'} (${linkedAccountSummary?.linkedEmail || '-'})`}
                         </p>
                       </div>
+                    ) : profile?.subscriptionTier === 'free' ? (
+                      <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 space-y-3">
+                        <p className="text-sm font-semibold text-stone-900">{t('settings.partnerModePremiumTitle')}</p>
+                        <p className="text-xs text-stone-600 leading-relaxed">{t('settings.partnerModePremiumDescription')}</p>
+                        <ul className="text-xs text-stone-600 space-y-1 list-disc list-inside">
+                          <li>{t('settings.partnerModeBenefit1')}</li>
+                          <li>{t('settings.partnerModeBenefit2')}</li>
+                          <li>{t('settings.partnerModeBenefit3')}</li>
+                        </ul>
+                        <button
+                          onClick={handleUpgrade}
+                          className="w-full py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition-all"
+                        >
+                          {t('settings.unlockPartnerMode')}
+                        </button>
+                      </div>
                     ) : (
                       <div className="space-y-3">
                         {/* Claimed requests: main account sees partner email + accept/reject */}
