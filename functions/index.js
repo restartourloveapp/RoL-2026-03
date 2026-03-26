@@ -185,6 +185,35 @@ exports.forcePartnerSettingsSync = onCall({
     }
   }
 
+  // Legacy fallback: resolve main account from accepted/claimed partner requests.
+  if (!mainUid) {
+    const acceptedSnap = await db.collection("partner_requests")
+      .where("respondentUid", "==", uid)
+      .where("status", "==", "accepted")
+      .limit(1)
+      .get();
+    if (!acceptedSnap.empty) {
+      const req = acceptedSnap.docs[0].data() || {};
+      if (req.fromUid && req.fromUid !== uid) {
+        mainUid = req.fromUid;
+      }
+    }
+  }
+
+  if (!mainUid) {
+    const claimedSnap = await db.collection("partner_requests")
+      .where("respondentUid", "==", uid)
+      .where("status", "==", "claimed")
+      .limit(1)
+      .get();
+    if (!claimedSnap.empty) {
+      const req = claimedSnap.docs[0].data() || {};
+      if (req.fromUid && req.fromUid !== uid) {
+        mainUid = req.fromUid;
+      }
+    }
+  }
+
   // Do not fail hard for partially linked states; just return a soft result.
   if (!mainUid || mainUid === uid) {
     return { success: false, reason: "not-linked" };
