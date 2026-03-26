@@ -845,7 +845,8 @@ async function startServer() {
       for (const targetUid of targetUids) {
         const targetRef = firestore.collection('users').doc(targetUid);
         const metaSnap = await targetRef.collection('session_meta_summaries').get();
-        await deleteQueryDocs(metaSnap);
+        const deleted = await deleteQueryDocs(metaSnap);
+        console.log(`[DELETE] Deleted ${deleted} session_meta_summaries for ${targetUid}`);
       }
 
       // Delete all sessions related to either account (owner or partner), including subcollections.
@@ -858,18 +859,30 @@ async function startServer() {
         ownerSessions.docs.forEach((d) => sessionMap.set(d.id, d.ref));
         partnerSessions.docs.forEach((d) => sessionMap.set(d.id, d.ref));
       }
+      console.log(`[DELETE] Found ${sessionMap.size} sessions to delete`);
 
       for (const sessionRef of sessionMap.values()) {
         const [messagesSnap, summariesSnap] = await Promise.all([
           sessionRef.collection('messages').get(),
           sessionRef.collection('message_summaries').get(),
         ]);
-        await deleteQueryDocs(messagesSnap);
-        await deleteQueryDocs(summariesSnap);
+        const msgDeleted = await deleteQueryDocs(messagesSnap);
+        const sumDeleted = await deleteQueryDocs(summariesSnap);
         await sessionRef.delete();
+        console.log(`[DELETE] Deleted session ${sessionRef.id}: ${msgDeleted} messages, ${sumDeleted} summaries`);
       }
 
       // Delete related top-level data for all accounts being deleted.
+      const collectionDeletes = {
+        timeline: 0,
+        homework: 0,
+        tickets: 0,
+        auditLogs: 0,
+        partner_requests: 0,
+        partnerConnectionCodes: 0,
+        partnerTokens: 0
+      };
+
       const relatedSnapshots: admin.firestore.QuerySnapshot[] = [];
       for (const targetUid of targetUids) {
         const snaps = await Promise.all([
@@ -894,28 +907,69 @@ async function startServer() {
           if (!seenRefs.has(d.ref.path)) {
             seenRefs.add(d.ref.path);
             await d.ref.delete();
+            // Count by collection
+            const collPrefix = d.ref.path.split('/')[0];
+            if (collPrefix in collectionDeletes) {
+              collectionDeletes[collPrefix as keyof typeof collectionDeletes]++;
+            }
           }
+        }
+      }
+      console.log(`[DELETE] Collection cleanup:`, collectionDeletes);
+
+      // Delete user docs and auth users for all accounts in scope.
+      const deletionResults: { uid: string; firestoreDeleted: boolean; authDeleted: boolean; authError?: string }[] = [];
+
+      for (const targetUid of targetUids) {
+        try {
+          console.log(`[DELETE] Starting deletion for user: ${targetUid}`);
+          const result = {
+            uid: targetUid,
+            firestoreDeleted: false,
+            authDeleted: false,
+            authError: undefined as string | undefined
+          };
+
+          // 1. Delete Firestore user doc
+          try {
+            await firestore.collection('users').doc(targetUid).delete();
+            result.firestoreDeleted = true;
+            console.log(`[DELETE] ✓ Firestore doc deleted: ${targetUid}`);
+          } catch (fsErr: any) {
+            console.error(`[DELETE] ✗ Failed to delete Firestore doc for ${targetUid}:`, fsErr);
+            throw fsErr;
+          }
+
+          // 2. Delete Firebase Auth user
+          try {
+            await admin.auth().deleteUser(targetUid);
+            result.authDeleted = true;
+            console.log(`[DELETE] ✓ Auth user deleted: ${targetUid}`);
+          } catch (authErr: any) {
+            if (authErr?.code === 'auth/user-not-found') {
+              console.warn(`[DELETE] ! Auth user already gone or not found: ${targetUid}`);
+              result.authDeleted = true; // considered successful
+            } else {
+              result.authError = authErr?.code || authErr?.message;
+              console.error(`[DELETE] ✗ Failed to delete auth user for ${targetUid}:`, authErr?.code, authErr?.message);
+              throw authErr;
+            }
+          }
+
+          deletionResults.push(result);
+        } catch (e: any) {
+          console.error(`[DELETE] ✗ Fatal error deleting ${targetUid}:`, e);
+          throw e;
         }
       }
 
-      // Delete user docs and auth users for all accounts in scope.
-      for (const targetUid of targetUids) {
-        await firestore.collection('users').doc(targetUid).delete();
-      }
-      for (const targetUid of targetUids) {
-        try {
-          await admin.auth().deleteUser(targetUid);
-        } catch (authErr: any) {
-          if (authErr?.code !== 'auth/user-not-found') {
-            throw authErr;
-          }
-        }
-      }
+      console.log(`[DELETE] Summary - All deletions completed:`, deletionResults);
 
       res.json({
         success: true,
         deletedPartnerAccount: targetUids.size > 1,
         cancelledStripeSubscriptions,
+        deletionResults,
         subscriptionNotice: 'Web-abonnementen via Stripe zijn stopgezet indien gevonden. Voor Apple App Store of Google Play moet je abonnement apart in de store opzeggen.',
       });
     } catch (e: any) {

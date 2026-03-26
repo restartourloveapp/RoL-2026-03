@@ -1141,18 +1141,30 @@ function MainApp() {
       });
 
       const data = await response.json().catch(() => ({}));
+      console.log('[DELETE] Server response:', { ok: response.ok, data });
+
       if (!response.ok) {
         if (data?.requiresRecentLogin) {
           showToast('Log opnieuw in en probeer daarna opnieuw te verwijderen.', 'error');
           await signOut(auth);
           return;
         }
-        throw new Error(data?.error || 'Verwijderen mislukt');
+        throw new Error(data?.error || `HTTP ${response.status}: Verwijderen mislukt`);
+      }
+
+      // Check if both Firestore and Auth deletions were successful
+      if (data?.deletionResults) {
+        const failedDeletions = data.deletionResults.filter((r: any) => !r.firestoreDeleted || !r.authDeleted);
+        if (failedDeletions.length > 0) {
+          console.error('[DELETE] Some deletions failed:', failedDeletions);
+          throw new Error(`Account verwijdering onvolledig: ${failedDeletions.map((r: any) => r.uid).join(', ')}`);
+        }
       }
 
       if (data?.subscriptionNotice) {
         showToast(data.subscriptionNotice, 'info');
       }
+      
       showToast(
         data?.deletedPartnerAccount
           ? 'Account, partneraccount en alle gekoppelde gegevens zijn verwijderd.'
@@ -1160,12 +1172,27 @@ function MainApp() {
         'success'
       );
 
+      // Clear all local state before signing out
       setShowDeleteAccountModal(false);
       setDeleteAccountConfirmText('');
+      setProfile(null);
+      setUser(null);
+      setView('sessions');
+      setActiveSession(null);
+      setPin('');
+      setPinConfirm('');
+      setSetupStep(0);
+      setIsPinVerified(false);
+      setKek(null);
+      setCk(null);
+      
+      console.log('[DELETE] Cleared local state, signing out...');
       await signOut(auth);
+      console.log('[DELETE] ✓ Account deletion completed and user signed out');
     } catch (e) {
       console.error('Delete account failed:', e);
-      showToast('Account kon niet worden verwijderd. Probeer opnieuw.', 'error');
+      const errorMsg = e instanceof Error ? e.message : 'Account kon niet worden verwijderd. Probeer opnieuw.';
+      showToast(errorMsg, 'error');
     } finally {
       setIsDeletingAccount(false);
     }
