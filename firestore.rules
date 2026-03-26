@@ -210,6 +210,10 @@ service cloud.firestore {
       allow read: if isAuth() && (
                     getAuth() == resource.data.ownerUid || 
                     getAuth() == resource.data.get('partnerUid', '') || 
+                    // Allow linked account read: partner can read main account's timeline
+                    get(/databases/$(database)/documents/users/$(resource.data.ownerUid)).data.get('partnerUid', '') == getAuth() ||
+                    // Allow linked account read: main account can read partner's timeline
+                    get(/databases/$(database)/documents/users/$(resource.data.ownerUid)).data.get('mainAccountUid', '') == getAuth() ||
                     isAdmin()
                   );
       
@@ -236,6 +240,10 @@ service cloud.firestore {
       allow read: if isAuth() && (
                     getAuth() == resource.data.ownerUid || 
                     getAuth() == resource.data.get('partnerUid', '') || 
+                    // Allow linked account read: partner can read main account's homework
+                    get(/databases/$(database)/documents/users/$(resource.data.ownerUid)).data.get('partnerUid', '') == getAuth() ||
+                    // Allow linked account read: main account can read partner's homework
+                    get(/databases/$(database)/documents/users/$(resource.data.ownerUid)).data.get('mainAccountUid', '') == getAuth() ||
                     isAdmin()
                   );
       
