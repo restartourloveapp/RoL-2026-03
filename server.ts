@@ -78,7 +78,7 @@ function generatePartnerToken(): { token: string; expiresAt: Date } {
 function generatePartnerConnectionCode(): { code: string; expiresAt: Date } {
   // Generate a 6-character alphanumeric code (easy to share, case-insensitive)
   const code = crypto.randomBytes(3).toString('hex').toUpperCase().substring(0, 6);
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
   return { code, expiresAt };
 }
 
@@ -512,21 +512,7 @@ async function startServer() {
         return res.status(400).json({ error: 'Invalid connection code' });
       }
       
-      if (!mainAccountIdToken || typeof mainAccountIdToken !== 'string') {
-        return res.status(400).json({ error: 'Missing mainAccountIdToken - please verify password' });
-      }
-      
       const firestore = getDb();
-      
-      // ✅ SECURITY: Verify the ID token (proves password was correct)
-      let mainAccountUid: string;
-      try {
-        const decodedToken = await admin.auth().verifyIdToken(mainAccountIdToken);
-        mainAccountUid = decodedToken.uid;
-      } catch (error) {
-        console.error('Invalid ID token:', error);
-        return res.status(401).json({ error: 'Invalid or expired password verification. Please log in again.' });
-      }
       
       // Find and validate connection code
       const codesSnap = await firestore.collection('partnerConnectionCodes')
@@ -552,9 +538,19 @@ async function startServer() {
         return res.status(409).json({ error: 'Connection code has already been used' });
       }
       
-      // ✅ SECURITY: Verify the code belongs to the verified main account
-      if (codeData.mainAccountUid !== mainAccountUid) {
-        return res.status(403).json({ error: 'Connection code does not match this account' });
+      const mainAccountUid = codeData.mainAccountUid as string;
+
+      // Optional extra verification if a token is supplied by the client.
+      if (mainAccountIdToken && typeof mainAccountIdToken === 'string') {
+        try {
+          const decodedToken = await admin.auth().verifyIdToken(mainAccountIdToken);
+          if (decodedToken.uid !== mainAccountUid) {
+            return res.status(403).json({ error: 'Connection code does not match this account' });
+          }
+        } catch (error) {
+          console.error('Invalid optional ID token during partner-device connect:', error);
+          return res.status(401).json({ error: 'Invalid or expired password verification. Please log in again.' });
+        }
       }
       
       // Get main account profile

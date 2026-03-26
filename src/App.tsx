@@ -390,10 +390,6 @@ function MainApp() {
   const hasLinkedPartnerDevice = !!profile?.partnerUid || !!profile?.mainAccountUid;
   const isSharedDeviceMode = !hasLinkedPartnerDevice || (isMainAccount && sharedDeviceFallbackEnabled);
   const isFreeTierAccount = !!profile && profile.subscriptionTier === 'free' && !isPartnerAccount;
-  const [partnerRequests, setPartnerRequests] = useState<PartnerRequest[]>([]);
-  const [linkCode, setLinkCode] = useState<string | null>(null);
-  const [linkCodeInput, setLinkCodeInput] = useState('');
-  const [isClaimingCode, setIsClaimingCode] = useState(false);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [homework, setHomework] = useState<Homework[]>([]);
   const [crisisResources, setCrisisResources] = useState<CrisisResource[]>([]);
@@ -691,47 +687,6 @@ function MainApp() {
       cancelled = true;
     };
   }, [user?.uid, isPinVerified, isPartnerAccount, view]);
-
-  // --- Partner Request Listener ---
-  useEffect(() => {
-    if (!user || !isPinVerified || isAdmin) return;
-
-    // Listen for requests where I am the creator (to see when partner claims my code)
-    const q1 = query(
-      collection(db, 'partner_requests'),
-      where('fromUid', '==', user.uid),
-      where('status', '==', 'claimed')
-    );
-
-    // Listen for requests where I claimed a code (to see acceptance)
-    const q2 = query(
-      collection(db, 'partner_requests'),
-      where('respondentUid', '==', user.uid),
-      where('status', '==', 'claimed')
-    );
-
-    const unsub1 = onSnapshot(q1, (snapshot) => {
-      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PartnerRequest));
-      setPartnerRequests(prev => {
-        const otherReqs = prev.filter(r => r.fromUid !== user!.uid);
-        return [...otherReqs, ...reqs];
-      });
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'partner_requests');
-    });
-
-    const unsub2 = onSnapshot(q2, (snapshot) => {
-      const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PartnerRequest));
-      setPartnerRequests(prev => {
-        const otherReqs = prev.filter(r => r.respondentUid !== user!.uid);
-        return [...otherReqs, ...reqs];
-      });
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'partner_requests');
-    });
-
-    return () => { unsub1(); unsub2(); };
-  }, [user, isPinVerified, isAdmin]);
 
   // --- RK Derivation for Sender ---
   useEffect(() => {
@@ -1447,122 +1402,6 @@ function MainApp() {
       showToast(t('settings.alerts.profileError'), 'error');
     } finally {
       setIsProfileSaving(false);
-    }
-  };
-
-  const handleGenerateLinkCode = async () => {
-    if (!user || !profile) return;
-    if (isPartnerAccount || (profile.subscriptionTier !== 'paid' && profile.subscriptionTier !== 'partner')) {
-      showToast(t('auth.alerts.premiumRequired'), 'error');
-      return;
-    }
-    try {
-      // Generate a random 6-char alphanumeric code
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no confusing chars (0/O, 1/I/L)
-      let code = '';
-      const arr = new Uint8Array(6);
-      crypto.getRandomValues(arr);
-      for (let i = 0; i < 6; i++) code += chars[arr[i] % chars.length];
-
-      await addDoc(collection(db, 'partner_requests'), {
-        fromUid: user.uid,
-        fromEmail: user.email || '',
-        code,
-        status: 'pending',
-        createdAt: serverTimestamp()
-      });
-      setLinkCode(code);
-      showToast(t('settings.codeCopied') || 'Code generated!', 'success');
-    } catch (e) {
-      console.error('Failed to generate link code', e);
-    }
-  };
-
-  const handleClaimLinkCode = async () => {
-    if (!user || !linkCodeInput.trim()) return;
-    setIsClaimingCode(true);
-    try {
-      const code = linkCodeInput.trim().toUpperCase();
-      const q = query(
-        collection(db, 'partner_requests'),
-        where('code', '==', code),
-        where('status', '==', 'pending')
-      );
-      const snap = await getDocs(q);
-      if (snap.empty) {
-        showToast(t('settings.invalidCode') || 'Invalid or expired code', 'error');
-        setIsClaimingCode(false);
-        return;
-      }
-      const reqDoc = snap.docs[0];
-      const creatorSnap = await getDoc(doc(db, 'users', reqDoc.data().fromUid));
-      if (!creatorSnap.exists() || ((creatorSnap.data() as UserProfile).subscriptionTier !== 'paid' && (creatorSnap.data() as UserProfile).subscriptionTier !== 'partner')) {
-        showToast('Koppelen aan een gratis hoofdaccount is niet mogelijk.', 'error');
-        setIsClaimingCode(false);
-        return;
-      }
-      if (reqDoc.data().fromUid === user.uid) {
-        showToast(t('settings.cannotLinkSelf') || 'Cannot link with yourself', 'error');
-        setIsClaimingCode(false);
-        return;
-      }
-      await updateDoc(doc(db, 'partner_requests', reqDoc.id), {
-        respondentUid: user.uid,
-        respondentEmail: user.email || '',
-        status: 'claimed'
-      });
-
-      setLinkCodeInput('');
-      showToast(t('settings.codeClaimed') || 'Code claimed! Waiting for approval...', 'success');
-    } catch (e) {
-      console.error('Failed to claim code', e);
-      showToast(t('settings.codeClaimFailed') || 'Failed to claim code', 'error');
-    } finally {
-      setIsClaimingCode(false);
-    }
-  };
-
-  const handleAcceptPartnerRequest = async (req: PartnerRequest) => {
-    if (!user || !exchangeKey || !kek || !profile) return;
-    if (isPartnerAccount || profile.subscriptionTier !== 'paid') {
-      showToast('Partner koppelen is alleen beschikbaar voor de betaalde versie.', 'error');
-      return;
-    }
-    try {
-      const partnerUid = req.respondentUid;
-      if (!partnerUid) {
-        showToast('Partner request is incomplete (missing respondent).', 'error');
-        return;
-      }
-      if (partnerUid === user.uid) {
-        showToast('Cannot accept your own request as partner.', 'error');
-        return;
-      }
-
-      // 1. Fetch partner public key (respondent account)
-      const partnerSnap = await getDoc(doc(db, 'users', partnerUid));
-      if (!partnerSnap.exists()) throw new Error("Partner profile not found");
-      const partnerProfile = partnerSnap.data() as UserProfile;
-
-      // 2. Derive Shared Secret (Relationship Key)
-      const remotePubKey = await Encryption.importPublicKey(partnerProfile.exchangePublicKey);
-      const sharedSecret = await Encryption.deriveSharedSecret(exchangeKey, remotePubKey);
-      const wrappedRk = await Encryption.wrapKey(sharedSecret, kek);
-
-      // 3. Update request status
-      await updateDoc(doc(db, 'partner_requests', req.id), { status: 'accepted' });
-
-      // 4. Store local main-account link material.
-      // Cloud Function performs canonical cross-account sync.
-      await updateDoc(doc(db, 'users', user.uid), { 
-        partnerUid,
-        wrappedRK: wrappedRk
-      });
-
-      setRk(sharedSecret);
-      showToast(t('auth.alerts.partnerLinked'), 'success');
-    } catch (e) {
-      console.error("Failed to accept request", e);
     }
   };
 
@@ -3249,40 +3088,37 @@ function MainApp() {
                   </button>
                   <button 
                     onClick={async () => {
+                      if (!user || !profile) return;
                       if (!partnerConnectionCode || partnerConnectionCode.length !== 6) {
                         setConnectionCodeError('Please enter a valid 6-character code');
                         return;
                       }
-                      
+
                       setIsConnectingAsPartner(true);
                       try {
-                        // Validate code exists in partner_requests
-                        const q = query(
-                          collection(db, 'partner_requests'),
-                          where('code', '==', partnerConnectionCode),
-                          where('status', '==', 'pending')
-                        );
-                        const snap = await getDocs(q);
-                        if (snap.empty) {
-                          setConnectionCodeError('Invalid or expired code. Ask your partner for a new one.');
-                          setIsConnectingAsPartner(false);
-                          return;
-                        }
-                        if (snap.docs[0].data().fromUid === user?.uid) {
-                          setConnectionCodeError('You cannot connect with your own code.');
-                          setIsConnectingAsPartner(false);
-                          return;
-                        }
-                        // Claim the code
-                        await updateDoc(doc(db, 'partner_requests', snap.docs[0].id), {
-                          respondentUid: user?.uid,
-                          respondentEmail: user?.email || '',
-                          status: 'claimed'
+                        const response = await fetch('/api/connect-as-partner-device', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            partnerAccountUid: user.uid,
+                            connectionCode: partnerConnectionCode.toUpperCase(),
+                          })
                         });
 
-                        // Success - partner waits for approval/sync; no coach selection step needed here.
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok) {
+                          setConnectionCodeError(data?.error || 'Invalid or expired code. Ask your partner for a new one.');
+                          return;
+                        }
+
+                        const profileSnap = await getDoc(doc(db, 'users', user.uid));
+                        if (profileSnap.exists()) {
+                          setProfile(profileSnap.data() as UserProfile);
+                        }
+
                         setPartnerConnectionCode('');
-                        showToast('Code geclaimd. Wachten op goedkeuring van hoofdaccount...', 'success');
+                        setConnectionCodeError(null);
+                        showToast('Partner device succesvol gekoppeld.', 'success');
                       } catch (err) {
                         console.error('Partner connection error:', err);
                         setConnectionCodeError(err instanceof Error ? err.message : 'Connection failed');
@@ -4301,108 +4137,15 @@ function MainApp() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {/* Claimed requests: main account sees partner email + accept/reject */}
-                        {partnerRequests.filter(r => r.fromUid === user.uid && r.status === 'claimed').map(req => (
-                          <div key={req.id} className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
-                            <p className="text-xs text-emerald-900 font-medium">{t('settings.partnerWantsToLink') || 'Partner wil koppelen'}:</p>
-                            <p className="text-sm font-mono text-emerald-700">{req.respondentEmail}</p>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => handleAcceptPartnerRequest(req)}
-                                className="flex-1 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg"
-                              >
-                                {t('common.accept') || 'Accepteer'}
-                              </button>
-                              <button 
-                                onClick={async () => {
-                                  await updateDoc(doc(db, 'partner_requests', req.id), { status: 'rejected' });
-                                  showToast(t('settings.requestRejected') || 'Verzoek afgewezen', 'info');
-                                }}
-                                className="flex-1 py-2 bg-stone-200 text-stone-600 text-xs font-bold rounded-lg"
-                              >
-                                {t('common.reject') || 'Weiger'}
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-
-                        {/* Waiting for acceptance: partner sees waiting state */}
-                        {partnerRequests.filter(r => r.respondentUid === user.uid && r.status === 'claimed').map(req => (
-                          <div key={req.id} className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-                            <p className="text-xs text-amber-800 font-medium">{t('settings.waitingForApproval') || 'Wachten op goedkeuring van je partner...'}</p>
-                          </div>
-                        ))}
-
-                        {/* Generate code section */}
-                        {linkCode ? (
-                          <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
-                            <p className="text-xs text-emerald-900 font-medium">{t('settings.shareCode') || 'Deel deze code met je partner'}:</p>
-                            <div className="flex items-center gap-2">
-                              <code className="flex-1 p-3 bg-white text-center text-lg font-mono font-bold tracking-widest text-emerald-600 rounded-lg border border-emerald-100">
-                                {linkCode}
-                              </code>
-                              <button 
-                                onClick={() => { navigator.clipboard.writeText(linkCode); showToast(t('settings.codeCopied') || 'Code gekopieerd!', 'success'); }}
-                                className="p-3 bg-white text-emerald-600 rounded-lg border border-emerald-100"
-                              >
-                                <Copy className="w-4 h-4" />
-                              </button>
-                            </div>
-                            <button 
-                              onClick={() => setLinkCode(null)}
-                              className="w-full pt-2 text-xs text-emerald-600 font-medium"
-                            >
-                              {t('settings.generateNewCode') || 'Nieuwe code genereren'}
-                            </button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={handleGenerateLinkCode}
-                            className="w-full py-3 border-2 border-dashed border-emerald-200 rounded-xl text-emerald-600 text-sm font-bold hover:border-emerald-400 hover:bg-emerald-50 transition-all"
-                          >
-                            + {t('settings.generateLinkCode') || 'Genereer koppelcode'}
-                          </button>
-                        )}
-
-                        {/* Enter code section */}
-                        <div className="space-y-2">
-                          <p className="text-[10px] text-stone-500 font-medium">{t('settings.haveCode') || 'Heb je een code van je partner?'}</p>
-                          <div className="flex gap-2">
-                            <input 
-                              type="text" 
-                              value={linkCodeInput}
-                              onChange={(e) => setLinkCodeInput(e.target.value.toUpperCase())}
-                              placeholder="ABCDEF"
-                              maxLength={6}
-                              className="flex-1 px-3 py-2 text-center font-mono text-sm tracking-widest border border-stone-200 rounded-lg focus:outline-none focus:border-emerald-500"
-                            />
-                            <button 
-                              onClick={handleClaimLinkCode}
-                              disabled={linkCodeInput.length < 6 || isClaimingCode}
-                              className="px-4 py-2 bg-stone-900 text-white text-xs font-bold rounded-lg disabled:opacity-50"
-                            >
-                              {isClaimingCode ? '...' : (t('settings.linkButton') || 'Koppel')}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ✅ FEATURE: Partner Device Management - Generate Connection Code */}
-                  {!isPartnerAccount && (profile?.subscriptionTier === 'paid' || profile?.subscriptionTier === 'partner') && (
-                    <div className="space-y-3">
-                      <p className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner Device Setup</p>
-                      <div className="space-y-3">
                         {generatedConnectionCode ? (
                           <div className="space-y-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
                             <div className="space-y-2">
-                              <p className="text-xs text-emerald-900 font-medium">Share this code with your partner:</p>
+                              <p className="text-xs text-emerald-900 font-medium">Deel deze code met je partner:</p>
                               <div className="flex items-center gap-2">
                                 <code className="flex-1 p-3 bg-white text-center text-lg font-mono font-bold tracking-widest text-emerald-600 rounded-lg border border-emerald-100">
                                   {generatedConnectionCode}
                                 </code>
-                                <button 
+                                <button
                                   onClick={handleCopyConnectionCode}
                                   className="p-3 bg-white text-emerald-600 rounded-lg border border-emerald-100 hover:bg-emerald-50 transition-all"
                                 >
@@ -4411,22 +4154,22 @@ function MainApp() {
                               </div>
                               {connectionCodeExpiresAt && (
                                 <p className="text-[10px] text-emerald-600">
-                                  Expires: {connectionCodeExpiresAt.toLocaleString()}
+                                  Verloopt om: {connectionCodeExpiresAt.toLocaleString()}
                                 </p>
                               )}
                             </div>
-                            <button 
+                            <button
                               onClick={() => {
                                 setGeneratedConnectionCode(null);
                                 setConnectionCodeExpiresAt(null);
                               }}
                               className="w-full py-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-all"
                             >
-                              Generate New Code
+                              Nieuwe code genereren
                             </button>
                           </div>
                         ) : (
-                          <button 
+                          <button
                             onClick={handleGenerateConnectionCode}
                             disabled={isGeneratingCode}
                             className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-emerald-200 text-emerald-600 rounded-xl text-sm font-bold hover:border-emerald-400 hover:bg-emerald-50 transition-all disabled:opacity-50"
@@ -4445,11 +4188,11 @@ function MainApp() {
                           </button>
                         )}
                         <p className="text-[10px] text-stone-500">
-                          Partner devices connect using a 6-character code and inherit your PIN for same-session encryption.
+                          Partner devices verbinden direct met een 6-karakter code. Na correcte invoer is geen extra goedkeuring nodig.
                         </p>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
 
