@@ -63,6 +63,8 @@ export const translations = {
       pinSetupTitle: "Stel je beveiligingspincode in",
       pinSubtitle: "Je pincode wordt gebruikt om je berichten lokaal te ontsleutelen.",
       pinSetupSubtitle: "Deze pincode wordt gebruikt om al je toekomstige gesprekken te versleutelen. Vergeet hem niet!",
+      pinMatch: "Pincodes komen overeen",
+      pinNoMatch: "Pincodes komen niet overeen",
       unlockButton: "Ontgrendelen",
       initButton: "Encryptie initialiseren",
       zeroKnowledge: "Zero-Knowledge Beveiliging",
@@ -91,7 +93,9 @@ export const translations = {
         freeLimit: "Gratis limiet bereikt (40 berichten). Upgrade voor onbeperkte sessies.",
         freeLimitSessions: "Je hebt het maximum van 3 gratis sessies bereikt. Upgrade naar Premium voor onbeperkte sessies.",
         verificationSent: "Verificatie e-mail verzonden!",
-        emailNotVerified: "E-mail is nog niet geverifieerd. Controleer je inbox."
+        emailNotVerified: "E-mail is nog niet geverifieerd. Controleer je inbox.",
+        pinMismatch: "De bevestiging van je pincode komt niet overeen.",
+        pinConfirmRequired: "Bevestig je pincode om door te gaan."
       }
     },
     sessions: {
@@ -344,6 +348,8 @@ export const translations = {
       pinSetupTitle: "Set your Security PIN",
       pinSubtitle: "Your PIN is used to decrypt your messages locally.",
       pinSetupSubtitle: "This PIN will be used to encrypt all your future conversations. Don't forget it!",
+      pinMatch: "PINs match",
+      pinNoMatch: "PINs do not match",
       unlockButton: "Unlock",
       initButton: "Initialize Encryption",
       zeroKnowledge: "Zero-Knowledge Security",
@@ -372,7 +378,9 @@ export const translations = {
         freeLimit: "Free tier limit reached (40 messages). Upgrade for unlimited sessions.",
         freeLimitSessions: "You have reached the maximum of 3 free sessions. Upgrade to Premium for unlimited sessions.",
         verificationSent: "Verification email sent!",
-        emailNotVerified: "Email is not verified yet. Please check your inbox."
+        emailNotVerified: "Email is not verified yet. Please check your inbox.",
+        pinMismatch: "PIN confirmation does not match.",
+        pinConfirmRequired: "Please confirm your PIN to continue."
       }
     },
     sessions: {

@@ -329,6 +329,7 @@ function MainApp() {
 
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [pin, setPin] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
   const [isPinVerified, setIsPinVerified] = useState(false);
   const [kek, setKek] = useState<CryptoKey | null>(null);
   const [ck, setCk] = useState<CryptoKey | null>(null);
@@ -1112,6 +1113,8 @@ function MainApp() {
     signOut(auth);
     setIsEmailSent(false);
     setAuthError(null);
+    setPin('');
+    setPinConfirm('');
     setView('sessions');
     setActiveSession(null);
     setSetupStep(0);
@@ -1202,6 +1205,16 @@ function MainApp() {
       setAuthError('PIN must be at least 6 digits long');
       return;
     }
+
+    if (!pinConfirm || pinConfirm.length < 6) {
+      setAuthError(t('auth.alerts.pinConfirmRequired'));
+      return;
+    }
+
+    if (pin !== pinConfirm) {
+      setAuthError(t('auth.alerts.pinMismatch'));
+      return;
+    }
     
     // Verify PIN contains only digits (already filtered in input, but double-check)
     if (!/^\d+$/.test(pin)) {
@@ -1261,6 +1274,7 @@ function MainApp() {
       setCk(newCk);
       setExchangeKey(exchangePair.privateKey);
       setIsPinVerified(true);
+      setPinConfirm('');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
       showToast(t('auth.alerts.setupError'), 'error');
@@ -1342,6 +1356,7 @@ function MainApp() {
         setSetupStep(0);
         setIsPinVerified(false);
         setPin('');
+        setPinConfirm('');
       } else {
         const updateData: any = {
           personalCoach: personalCoachInput,
@@ -2863,6 +2878,8 @@ function MainApp() {
             onSubmit={(e) => {
               e.preventDefault();
               if (pin.length < 6) return;
+              if (!profile && pinConfirm.length < 6) return;
+              if (!profile && pin !== pinConfirm) return;
               if (profile) {
                 handleVerifyPin();
               } else {
@@ -2880,6 +2897,17 @@ function MainApp() {
                 className="w-full text-center text-4xl tracking-widest py-4 bg-stone-50 border-2 border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none transition-colors"
                 style={{ WebkitTextSecurity: 'disc' } as any}
               />
+              {!profile && (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pinConfirm}
+                  onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="••••••"
+                  className="w-full mt-3 text-center text-3xl tracking-widest py-3 bg-stone-50 border-2 border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none transition-colors"
+                  style={{ WebkitTextSecurity: 'disc' } as any}
+                />
+              )}
               {/* ✅ SECURITY FIX: Show PIN strength feedback */}
               <div className="mt-3 flex items-center justify-between text-xs">
                 <span className="text-stone-500">
@@ -2892,10 +2920,18 @@ function MainApp() {
                   </span>
                 )}
               </div>
+              {!profile && pinConfirm.length > 0 && (
+                <p className={cn(
+                  "mt-2 text-xs font-medium",
+                  pin === pinConfirm ? "text-emerald-600" : "text-rose-600"
+                )}>
+                  {pin === pinConfirm ? t('auth.pinMatch') : t('auth.pinNoMatch')}
+                </p>
+              )}
             </div>
             <button 
               type="submit"
-              disabled={pin.length < 6}
+              disabled={profile ? (pin.length < 6) : (pin.length < 6 || pinConfirm.length < 6 || pin !== pinConfirm)}
               className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {profile ? t('auth.unlockButton') : t('auth.initButton')}
