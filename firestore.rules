@@ -207,6 +207,16 @@ service cloud.firestore {
 
     // 📅 TIMELINE - Session milestones & insights
     match /timeline/{entryId} {
+      function createTimelineSession() {
+        return get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data;
+      }
+      function isTimelineCreateBySessionMember() {
+        return request.resource.data.sessionId is string && (
+                 getAuth() == createTimelineSession().ownerUid ||
+                 getAuth() == createTimelineSession().get('partnerUid', '') ||
+                 isAdmin()
+               );
+      }
       allow read: if isAuth() && (
                     getAuth() == resource.data.ownerUid || 
                     getAuth() == resource.data.get('partnerUid', '') || 
@@ -218,9 +228,16 @@ service cloud.firestore {
                   );
       
       // Title and description are encrypted maps (ciphertext + iv), not plain strings
-      allow create: if isAuth() && getAuth() == request.resource.data.ownerUid &&
+      allow create: if isAuth() &&
                       request.resource.data.type in ['milestone', 'insight', 'breakthrough'] &&
-                      isTimestamp(request.resource.data.createdAt);
+                      isTimestamp(request.resource.data.createdAt) &&
+                      (
+                        getAuth() == request.resource.data.ownerUid ||
+                        (
+                          isTimelineCreateBySessionMember() &&
+                          request.resource.data.ownerUid == createTimelineSession().ownerUid
+                        )
+                      );
       
       allow update: if isAuth() && (
                       getAuth() == resource.data.ownerUid || 
@@ -237,6 +254,16 @@ service cloud.firestore {
 
     // 📝 HOMEWORK - Assigned tasks
     match /homework/{taskId} {
+      function createHomeworkSession() {
+        return get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data;
+      }
+      function isHomeworkCreateBySessionMember() {
+        return request.resource.data.sessionId is string && (
+                 getAuth() == createHomeworkSession().ownerUid ||
+                 getAuth() == createHomeworkSession().get('partnerUid', '') ||
+                 isAdmin()
+               );
+      }
       allow read: if isAuth() && (
                     getAuth() == resource.data.ownerUid || 
                     getAuth() == resource.data.get('partnerUid', '') || 
@@ -247,9 +274,16 @@ service cloud.firestore {
                     isAdmin()
                   );
       
-      allow create: if isAuth() && getAuth() == request.resource.data.ownerUid &&
+      allow create: if isAuth() &&
                       request.resource.data.status in ['assigned', 'completed', 'skipped'] &&
-                      isTimestamp(request.resource.data.createdAt);
+                      isTimestamp(request.resource.data.createdAt) &&
+                      (
+                        getAuth() == request.resource.data.ownerUid ||
+                        (
+                          isHomeworkCreateBySessionMember() &&
+                          request.resource.data.ownerUid == createHomeworkSession().ownerUid
+                        )
+                      );
       
       allow update: if isAuth() && (
                       getAuth() == resource.data.ownerUid || 

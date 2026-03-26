@@ -1896,7 +1896,12 @@ function MainApp() {
         setSummary(result.summary);
 
         const canonicalOwnerUid = activeSession.ownerUid || user!.uid;
-        const canonicalPartnerUid = activeSession.type === 'couple' ? (activeSession.partnerUid || null) : null;
+        const canonicalPartnerUid = activeSession.type === 'couple'
+          ? (
+              activeSession.partnerUid ||
+              (activeSession.ownerUid === user!.uid ? (profile?.partnerUid || null) : user!.uid)
+            )
+          : null;
 
         // Always save a Session Summary entry to the timeline for all users
         const summaryTitle = language === 'nl' ? 'Sessie Samenvatting' : 'Session Summary';
