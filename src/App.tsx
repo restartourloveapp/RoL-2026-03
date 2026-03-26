@@ -1186,7 +1186,19 @@ function MainApp() {
       setKek(null);
       setCk(null);
       
-      console.log('[DELETE] Cleared local state, signing out...');
+      console.log('[DELETE] Cleared local state, clearing browser caches...');
+      
+      // Clear service worker caches
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(
+          cacheNames.map(cacheName => caches.delete(cacheName))
+        );
+        console.log('[DELETE] ✓ Cleared service worker caches');
+      }
+      
+      // Sign out (this clears Firebase Auth tokens and listeners)
+      console.log('[DELETE] Signing out...');
       await signOut(auth);
       console.log('[DELETE] ✓ Account deletion completed and user signed out');
     } catch (e) {
