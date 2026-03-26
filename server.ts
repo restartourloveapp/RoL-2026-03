@@ -90,7 +90,7 @@ async function validateMainAccountPremium(mainAccountUid: string): Promise<boole
     if (!userSnap.exists()) return false;
     
     const userData = userSnap.data();
-    return userData?.subscriptionTier === 'premium';
+    return userData?.subscriptionTier === 'paid';
   } catch (error) {
     console.error('Error validating main account premium status:', error);
     return false;
@@ -313,7 +313,7 @@ async function startServer() {
         try {
           const firestore = getDb();
           await firestore.collection('users').doc(userId).update({
-            subscriptionTier: 'premium',
+            subscriptionTier: 'paid',
             updatedAt: new Date().toISOString()
           });
           
@@ -566,7 +566,7 @@ async function startServer() {
       const mainAccountData = mainAccountSnap.data();
       
       // Verify main account is premium
-      if (mainAccountData.subscriptionTier !== 'premium') {
+      if (mainAccountData.subscriptionTier !== 'paid') {
         return res.status(403).json({ error: 'Main account must be premium to create partner devices' });
       }
       

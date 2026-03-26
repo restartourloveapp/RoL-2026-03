@@ -94,7 +94,7 @@ exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated({
   const db = admin.firestore();
   const mainSnap = await db.collection("users").doc(mainUid).get();
   const mainData = mainSnap.exists ? (mainSnap.data() || {}) : {};
-  if (mainData.subscriptionTier !== "premium") {
+  if (mainData.subscriptionTier !== "paid") {
     logger.warn("Skipping partner profile sync because main account is not premium", {
       requestId: event.params.requestId,
       mainUid,

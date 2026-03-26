@@ -97,7 +97,7 @@ interface UserProfile {
   exchangePublicKey: string;
   wrappedExchangePrivateKey: { ciphertext: string; iv: string };
   wrappedRK?: { ciphertext: string; iv: string };
-  subscriptionTier: 'free' | 'premium' | 'partner';
+  subscriptionTier: 'free' | 'paid' | 'partner';
   partnerUid?: string;
   partnerId?: string; // Unique ID of the partner person
   role?: 'user' | 'admin' | 'partner';
@@ -399,7 +399,7 @@ function MainApp() {
   const [crisisResources, setCrisisResources] = useState<CrisisResource[]>([]);
 
   const stats = useMemo(() => {
-    if (!profile || (profile.subscriptionTier !== 'premium' && profile.subscriptionTier !== 'partner')) return null;
+    if (!profile || (profile.subscriptionTier !== 'paid' && profile.subscriptionTier !== 'partner')) return null;
     
     const totalSessions = sessions.length;
     const totalMessages = sessions.reduce((acc, s) => acc + (s.messageCount || 0), 0);
@@ -1413,7 +1413,7 @@ function MainApp() {
 
   const handleGenerateLinkCode = async () => {
     if (!user || !profile) return;
-    if (isPartnerAccount || profile.subscriptionTier !== 'premium') {
+    if (isPartnerAccount || (profile.subscriptionTier !== 'paid' && profile.subscriptionTier !== 'partner')) {
       showToast(t('auth.alerts.premiumRequired'), 'error');
       return;
     }
@@ -1457,7 +1457,7 @@ function MainApp() {
       }
       const reqDoc = snap.docs[0];
       const creatorSnap = await getDoc(doc(db, 'users', reqDoc.data().fromUid));
-      if (!creatorSnap.exists() || (creatorSnap.data() as UserProfile).subscriptionTier !== 'premium') {
+      if (!creatorSnap.exists() || ((creatorSnap.data() as UserProfile).subscriptionTier !== 'paid' && (creatorSnap.data() as UserProfile).subscriptionTier !== 'partner')) {
         showToast('Koppelen aan een gratis hoofdaccount is niet mogelijk.', 'error');
         setIsClaimingCode(false);
         return;
@@ -1485,7 +1485,7 @@ function MainApp() {
 
   const handleAcceptPartnerRequest = async (req: PartnerRequest) => {
     if (!user || !exchangeKey || !kek || !profile) return;
-    if (isPartnerAccount || profile.subscriptionTier !== 'premium') {
+    if (isPartnerAccount || profile.subscriptionTier !== 'paid') {
       showToast('Partner koppelen is alleen beschikbaar voor de betaalde versie.', 'error');
       return;
     }
@@ -1531,7 +1531,7 @@ function MainApp() {
   const handleGeneratePartnerConnectionCode = async () => {
     if (!user || !profile) return;
     
-    if (profile.subscriptionTier !== 'premium') {
+    if (profile.subscriptionTier !== 'paid' && profile.subscriptionTier !== 'partner') {
       showToast(t('auth.alerts.premiumRequired'), 'error');
       return;
     }
@@ -1631,7 +1631,7 @@ function MainApp() {
 
   // ✅ FEATURE: Partner Device Account - Generate connection code
   const handleGenerateConnectionCode = async () => {
-    if (!user || profile?.subscriptionTier !== 'premium') {
+    if (!user || (profile?.subscriptionTier !== 'paid' && profile?.subscriptionTier !== 'partner')) {
       showToast('Only premium accounts can generate partner connection codes', 'error');
       return;
     }
@@ -1903,7 +1903,7 @@ function MainApp() {
           }, []);
         };
         
-        const isPremium = profile?.subscriptionTier === 'premium';
+        const isPremium = profile?.subscriptionTier === 'paid' || profile?.subscriptionTier === 'partner';
         const result = await AI.generateSummary(history, language, isPremium);
         const explicitHomework = filterExplicitHomework(result.homework || []);
         setSummary(result.summary);
@@ -2188,33 +2188,25 @@ function MainApp() {
           role: m.senderUid === 'ai_coach' ? 'model' as const : 'user' as const,
           content: m.decryptedText || ''
         }));
-        const isPremium = profile?.subscriptionTier === 'premium';
+        const isPremium = profile?.subscriptionTier === 'paid' || profile?.subscriptionTier === 'partner';
         const result = await AI.generateSummary(history, language, isPremium);
-        const encryptedSummary = await Encryption.encryptText(result.summary, activeSSK);
-        sessionUpdate.lastCheckpointSummary = {
-          ciphertext: encryptedSummary.ciphertext,
-          iv: encryptedSummary.iv
-        };
 
-        // Auto-extract timeline entries at checkpoints (Premium Only)
-        if (isPremium) {
-          if (result.timelineEntries && result.timelineEntries.length > 0) {
-            for (const entry of result.timelineEntries) {
-              if (!entry.title || !entry.description) continue;
-              const encryptedTitle = await Encryption.encryptText(entry.title, activeSSK);
-              const encryptedDescription = await Encryption.encryptText(entry.description, activeSSK);
-              await addDoc(collection(db, 'timeline'), {
-                sessionId: activeSession.id,
-                ownerUid: activeSession.ownerUid || user!.uid,
-                partnerUid: activeSession.type === 'couple' ? (activeSession.partnerUid || null) : null,
-                type: entry.type,
-                title: encryptedTitle.ciphertext,
-                titleIv: encryptedTitle.iv,
-                description: encryptedDescription.ciphertext,
-                descriptionIv: encryptedDescription.iv,
-                createdAt: serverTimestamp()
-              });
-            }
+        if (result.timelineEntries && result.timelineEntries.length > 0) {
+          for (const entry of result.timelineEntries) {
+            if (!entry.title || !entry.description) continue;
+            const encryptedTitle = await Encryption.encryptText(entry.title, activeSSK);
+            const encryptedDescription = await Encryption.encryptText(entry.description, activeSSK);
+            await addDoc(collection(db, 'timeline'), {
+              sessionId: activeSession.id,
+              ownerUid: activeSession.ownerUid || user!.uid,
+              partnerUid: activeSession.type === 'couple' ? (activeSession.partnerUid || null) : null,
+              type: entry.type,
+              title: encryptedTitle.ciphertext,
+              titleIv: encryptedTitle.iv,
+              description: encryptedDescription.ciphertext,
+              descriptionIv: encryptedDescription.iv,
+              createdAt: serverTimestamp()
+            });
           }
         }
 
@@ -4359,7 +4351,7 @@ function MainApp() {
                   </div>
 
                   {/* ✅ FEATURE: Partner Device Management - Generate Connection Code */}
-                  {!isPartnerAccount && profile?.subscriptionTier === 'premium' && (
+                  {!isPartnerAccount && (profile?.subscriptionTier === 'paid' || profile?.subscriptionTier === 'partner') && (
                     <div className="space-y-3">
                       <p className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner Device Setup</p>
                       <div className="space-y-3">
