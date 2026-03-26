@@ -17,7 +17,6 @@ const copyFields = [
   "partnerName",
   "partnerPronouns",
   "defaultCoupleCoach",
-  "subscriptionTier",
   "language",
   "profileId",
   "partnerId",
@@ -43,6 +42,7 @@ async function syncSharedMainToPartner(mainUid, partnerUid, requestId = null) {
     mainAccountUid: mainUid,
     accountType: "partner",
     role: "partner",
+    subscriptionTier: "partner",
     partnerUid: mainUid,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
@@ -92,6 +92,22 @@ exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated({
   }
 
   const db = admin.firestore();
+  const mainSnap = await db.collection("users").doc(mainUid).get();
+  const mainData = mainSnap.exists ? (mainSnap.data() || {}) : {};
+  if (mainData.subscriptionTier !== "premium") {
+    logger.warn("Skipping partner profile sync because main account is not premium", {
+      requestId: event.params.requestId,
+      mainUid,
+      partnerUid,
+      subscriptionTier: mainData.subscriptionTier || null,
+    });
+    await event.data.after.ref.update({
+      status: "rejected",
+      rejectionReason: "premium-required",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return;
+  }
   await syncSharedMainToPartner(mainUid, partnerUid, event.params.requestId);
 
   await event.data.after.ref.update({
@@ -232,4 +248,41 @@ exports.forcePartnerSettingsSync = onCall({
   });
 
   return { success: true, mainUid };
+});
+
+exports.getLinkedAccountSummary = onCall({
+  region: "europe-west1",
+}, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const db = admin.firestore();
+  const selfSnap = await db.collection("users").doc(uid).get();
+  if (!selfSnap.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  const self = selfSnap.data() || {};
+  const isPartner = self.accountType === "partner" || self.role === "partner" || !!self.mainAccountUid;
+  const linkedUid = isPartner ? (self.mainAccountUid || self.partnerUid) : self.partnerUid;
+
+  if (!linkedUid || linkedUid === uid) {
+    return { success: false, reason: "not-linked" };
+  }
+
+  const linkedSnap = await db.collection("users").doc(linkedUid).get();
+  if (!linkedSnap.exists) {
+    return { success: false, reason: "linked-profile-not-found" };
+  }
+
+  const linked = linkedSnap.data() || {};
+  return {
+    success: true,
+    linkedUid,
+    linkedDisplayName: linked.displayName || "",
+    linkedEmail: linked.email || "",
+    relation: isPartner ? "main-account" : "partner-account",
+  };
 });

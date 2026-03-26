@@ -97,7 +97,7 @@ interface UserProfile {
   exchangePublicKey: string;
   wrappedExchangePrivateKey: { ciphertext: string; iv: string };
   wrappedRK?: { ciphertext: string; iv: string };
-  subscriptionTier: 'free' | 'premium';
+  subscriptionTier: 'free' | 'premium' | 'partner';
   partnerUid?: string;
   partnerId?: string; // Unique ID of the partner person
   role?: 'user' | 'admin' | 'partner';
@@ -112,12 +112,14 @@ interface UserProfile {
   partnerPronouns?: { ciphertext: string; iv: string };
   defaultCoupleCoach?: AI.CoachPersona;
   personalCoach?: AI.CoachPersona;
+  mainSharedDeviceFallback?: boolean;
 }
 
 interface ChatSession {
   id: string;
   type: 'personal' | 'couple';
   ownerUid: string; // User ID of account owner (for access control)
+  partnerUid?: string; // Linked partner account UID for shared sessions
   ownerProfileId: string; // Profile ID of the person who owns this session
   partnerProfileId?: string; // Profile ID of the partner (for couple sessions)
   coachPersona: AI.CoachPersona;
@@ -323,6 +325,7 @@ function MainApp() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isEmailSent, setIsEmailSent] = useState(false);
+  const [preProfileChoice, setPreProfileChoice] = useState<'own' | 'partner' | null>(null);
 
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [pin, setPin] = useState('');
@@ -372,9 +375,20 @@ function MainApp() {
     partnerName?: string;
     partnerPronouns?: string;
   }>({});
+  const [sharedDeviceFallbackEnabled, setSharedDeviceFallbackEnabled] = useState(false);
+  const [linkedAccountSummary, setLinkedAccountSummary] = useState<{
+    linkedUid: string;
+    linkedDisplayName: string;
+    linkedEmail: string;
+    relation: 'main-account' | 'partner-account';
+  } | null>(null);
 
   const isAdmin = profile?.role === 'admin';
   const isPartnerAccount = profile?.accountType === 'partner' || profile?.role === 'partner' || !!profile?.mainAccountUid;
+  const isMainAccount = !!profile && !isPartnerAccount;
+  const hasLinkedPartnerDevice = !!profile?.partnerUid || !!profile?.mainAccountUid;
+  const isSharedDeviceMode = !hasLinkedPartnerDevice || (isMainAccount && sharedDeviceFallbackEnabled);
+  const isFreeTierAccount = !!profile && profile.subscriptionTier === 'free' && !isPartnerAccount;
   const [partnerRequests, setPartnerRequests] = useState<PartnerRequest[]>([]);
   const [linkCode, setLinkCode] = useState<string | null>(null);
   const [linkCodeInput, setLinkCodeInput] = useState('');
@@ -384,7 +398,7 @@ function MainApp() {
   const [crisisResources, setCrisisResources] = useState<CrisisResource[]>([]);
 
   const stats = useMemo(() => {
-    if (!profile || profile.subscriptionTier !== 'premium') return null;
+    if (!profile || (profile.subscriptionTier !== 'premium' && profile.subscriptionTier !== 'partner')) return null;
     
     const totalSessions = sessions.length;
     const totalMessages = sessions.reduce((acc, s) => acc + (s.messageCount || 0), 0);
@@ -396,7 +410,9 @@ function MainApp() {
     
     return { totalSessions, totalMessages, milestones, daysJourney };
   }, [profile, sessions, timeline]);
-  const isProfileIncomplete = profile && !profile.profileName;
+  // Partner profiles are considered complete only after they are actually linked to a main account.
+  const isProfileIncomplete = profile && !profile.profileName && !(profile.accountType === 'partner' && !!profile.mainAccountUid);
+  const isUnlinkedPartnerFlow = !!profile && profile.accountType === 'partner' && !profile.mainAccountUid;
   const [newMessage, setNewMessage] = useState('');
   const [selectedSpeakerUid, setSelectedSpeakerUid] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -406,6 +422,49 @@ function MainApp() {
       setSelectedSpeakerUid(profile.profileId);  // Always use profileId for proper attribution
     }
   }, [activeSession?.id, user?.uid, profile?.profileId]);
+
+  // Restore partner onboarding step after refresh/reload while link is still pending.
+  useEffect(() => {
+    if (!profile) return;
+    if (profile.accountType === 'partner' && !profile.mainAccountUid) {
+      setAccountType('partner');
+      if (setupStep !== 2) setSetupStep(2);
+    }
+  }, [profile?.uid, profile?.accountType, profile?.mainAccountUid]);
+
+  useEffect(() => {
+    if (!user || !isPinVerified || view !== 'settings' || (!profile?.partnerUid && !profile?.mainAccountUid)) {
+      setLinkedAccountSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadLinkedSummary = async () => {
+      try {
+        const fns = getFunctions(app, 'europe-west1');
+        const callSummary = httpsCallable(fns, 'getLinkedAccountSummary');
+        const result = await callSummary({});
+        const data: any = result.data || {};
+        if (!cancelled && data.success) {
+          setLinkedAccountSummary({
+            linkedUid: data.linkedUid,
+            linkedDisplayName: data.linkedDisplayName || '',
+            linkedEmail: data.linkedEmail || '',
+            relation: data.relation === 'main-account' ? 'main-account' : 'partner-account',
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('Failed to load linked account summary', e);
+        }
+      }
+    };
+
+    loadLinkedSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, isPinVerified, view, profile?.partnerUid, profile?.mainAccountUid]);
 
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
@@ -482,6 +541,7 @@ function MainApp() {
         setIsPinVerified(false);
         setKek(null);
         setCk(null);
+        setPreProfileChoice(null);
       }
       setIsAuthReady(true);
     });
@@ -538,6 +598,9 @@ function MainApp() {
             ...prev, 
             persona: prev.type === 'personal' ? (profile.personalCoach as AI.CoachPersona) : prev.persona 
           }));
+        }
+        if (!isPartnerAccount) {
+          setSharedDeviceFallbackEnabled(Boolean(profile.mainSharedDeviceFallback));
         }
       } catch (e) {
         console.error("Failed to decrypt profile data", e);
@@ -616,7 +679,7 @@ function MainApp() {
 
   // --- RK Derivation for Sender ---
   useEffect(() => {
-    if (!user || !profile || !exchangeKey || !kek || profile.wrappedRK || !profile.partnerUid) return;
+    if (!user || !profile || !exchangeKey || !kek || profile.wrappedRK || !profile.partnerUid || isPartnerAccount) return;
 
     const deriveRK = async () => {
       try {
@@ -636,7 +699,7 @@ function MainApp() {
     };
 
     deriveRK();
-  }, [user, profile, exchangeKey, kek]);
+  }, [user, profile, exchangeKey, kek, isPartnerAccount]);
 
   // --- Session Listener ---
   useEffect(() => {
@@ -910,6 +973,9 @@ function MainApp() {
   const [includeSnippet, setIncludeSnippet] = useState(false);
   const [supportFile, setSupportFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteAccountConfirmText, setDeleteAccountConfirmText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const handleCreateTicket = async () => {
     if (!user || !supportSubject || !supportDescription) return;
@@ -991,11 +1057,90 @@ function MainApp() {
     signOut(auth);
     setIsEmailSent(false);
     setAuthError(null);
+    setView('sessions');
+    setActiveSession(null);
+    setSetupStep(0);
+    setAccountType(null);
+    setPreProfileChoice(null);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    if (deleteAccountConfirmText.trim().toUpperCase() !== 'VERWIJDER') {
+      showToast('Typ VERWIJDER om te bevestigen.', 'error');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      const idToken = await user.getIdToken(true);
+      const response = await fetch('/api/delete-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (data?.requiresRecentLogin) {
+          showToast('Log opnieuw in en probeer daarna opnieuw te verwijderen.', 'error');
+          await signOut(auth);
+          return;
+        }
+        throw new Error(data?.error || 'Verwijderen mislukt');
+      }
+
+      if (data?.subscriptionNotice) {
+        showToast(data.subscriptionNotice, 'info');
+      }
+      showToast(
+        data?.deletedPartnerAccount
+          ? 'Account, partneraccount en alle gekoppelde gegevens zijn verwijderd.'
+          : 'Account en gegevens zijn verwijderd.',
+        'success'
+      );
+
+      setShowDeleteAccountModal(false);
+      setDeleteAccountConfirmText('');
+      await signOut(auth);
+    } catch (e) {
+      console.error('Delete account failed:', e);
+      showToast('Account kon niet worden verwijderd. Probeer opnieuw.', 'error');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const handleToggleSharedDeviceFallback = async () => {
+    if (!user || !profile || isPartnerAccount || !profile.partnerUid) return;
+
+    const nextValue = !sharedDeviceFallbackEnabled;
+    setSharedDeviceFallbackEnabled(nextValue);
+
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        mainSharedDeviceFallback: nextValue,
+        updatedAt: serverTimestamp()
+      });
+      showToast(nextValue ? 'Shared device fallback ingeschakeld' : 'Shared device fallback uitgeschakeld', 'success');
+    } catch (e) {
+      console.error('Failed to toggle shared device fallback', e);
+      setSharedDeviceFallbackEnabled(!nextValue);
+      showToast('Kon shared device fallback niet opslaan.', 'error');
+    }
   };
 
   const handleSetupPin = async () => {
     // ✅ SECURITY FIX: PIN strength validation
     if (!user) return;
+
+    // Partner accounts must inherit the main-account PIN and never create one locally.
+    if (preProfileChoice === 'partner' || accountType === 'partner' || profile?.accountType === 'partner') {
+      showToast('Partner account gebruikt de pincode van het hoofdaccount.', 'error');
+      return;
+    }
     
     // Enforce minimum PIN length of 6 digits
     if (!pin || pin.length < 6) {
@@ -1104,19 +1249,50 @@ function MainApp() {
   };
 
   const handleSaveProfile = async () => {
-    if (!user || !ck) {
+    const isSavingAsPartner = accountType === 'partner' || isPartnerAccount;
+
+    if (!user || (!ck && !isSavingAsPartner)) {
       console.error("Cannot save profile: user or ck is missing", { user: !!user, ck: !!ck });
       return;
     }
     setIsProfileSaving(true);
     try {
       const path = `users/${user.uid}`;
-      const updateData: any = {
-        personalCoach: personalCoachInput,
-        updatedAt: serverTimestamp()
-      };
 
-      if (!isPartnerAccount) {
+      if (isSavingAsPartner) {
+        // For partner accounts we MUST NOT write empty encrypted profile fields.
+        // Just record the account type + personal coach, then let the Cloud Function
+        // push all shared fields (profileName, partnerName, keys, etc.) from the main account.
+        const partnerUpdate: any = {
+          accountType: 'partner',
+          personalCoach: personalCoachInput,
+          updatedAt: serverTimestamp()
+        };
+        await updateDoc(doc(db, 'users', user.uid), partnerUpdate);
+        setNewSessionConfig(prev => ({ ...prev, persona: personalCoachInput }));
+
+        // Immediately trigger the server-side sync so the profile is filled before we exit onboarding.
+        try {
+          const fns = getFunctions(app, 'europe-west1');
+          const callSync = httpsCallable(fns, 'forcePartnerSettingsSync');
+          await callSync({});
+          showToast('Partner profiel gesynchroniseerd', 'success');
+        } catch (syncErr) {
+          console.warn('Immediate partner sync failed — will retry on next settings open', syncErr);
+          showToast('Profiel opgeslagen. Partners data wordt zometeen gesynchroniseerd.', 'success');
+        }
+
+        // Partner account must unlock with the shared PIN after linking.
+        setPreProfileChoice(null);
+        setSetupStep(0);
+        setIsPinVerified(false);
+        setPin('');
+      } else {
+        const updateData: any = {
+          personalCoach: personalCoachInput,
+          updatedAt: serverTimestamp()
+        };
+
         console.log("Encrypting profile data...");
         const encryptedName = await Encryption.encryptText(profileNameInput, ck);
         const encryptedPronouns = await Encryption.encryptText(profilePronounsInput, ck);
@@ -1128,28 +1304,27 @@ function MainApp() {
         updateData.partnerName = encryptedPartnerName;
         updateData.partnerPronouns = encryptedPartnerPronouns;
         updateData.defaultCoupleCoach = defaultCoachInput;
-        updateData.accountType = accountType || 'own';
-      }
+        updateData.accountType = 'own';
+        updateData.mainSharedDeviceFallback = sharedDeviceFallbackEnabled;
 
-      console.log("Updating Firestore document:", path);
-      try {
-        await updateDoc(doc(db, 'users', user.uid), updateData);
-        setNewSessionConfig(prev => ({ ...prev, persona: defaultCoachInput }));
-      } catch (error) {
-        console.error("Firestore update failed:", error);
-        handleFirestoreError(error, OperationType.UPDATE, path);
-      }
+        console.log("Updating Firestore document:", path);
+        try {
+          await updateDoc(doc(db, 'users', user.uid), updateData);
+          setNewSessionConfig(prev => ({ ...prev, persona: defaultCoachInput }));
+        } catch (error) {
+          console.error("Firestore update failed:", error);
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
 
-      if (!isPartnerAccount) {
         setDecryptedProfile({
           name: profileNameInput,
           pronouns: profilePronounsInput,
           partnerName: partnerNameInput,
           partnerPronouns: partnerPronounsInput
         });
-      }
 
-      showToast(t('settings.alerts.profileUpdated'), 'success');
+        showToast(t('settings.alerts.profileUpdated'), 'success');
+      }
     } catch (e) {
       console.error("Failed to save profile:", e);
       const errorMessage = e instanceof Error ? e.message : String(e);
@@ -1167,7 +1342,11 @@ function MainApp() {
   };
 
   const handleGenerateLinkCode = async () => {
-    if (!user) return;
+    if (!user || !profile) return;
+    if (isPartnerAccount || profile.subscriptionTier !== 'premium') {
+      showToast(t('auth.alerts.premiumRequired'), 'error');
+      return;
+    }
     try {
       // Generate a random 6-char alphanumeric code
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no confusing chars (0/O, 1/I/L)
@@ -1207,6 +1386,12 @@ function MainApp() {
         return;
       }
       const reqDoc = snap.docs[0];
+      const creatorSnap = await getDoc(doc(db, 'users', reqDoc.data().fromUid));
+      if (!creatorSnap.exists() || (creatorSnap.data() as UserProfile).subscriptionTier !== 'premium') {
+        showToast('Koppelen aan een gratis hoofdaccount is niet mogelijk.', 'error');
+        setIsClaimingCode(false);
+        return;
+      }
       if (reqDoc.data().fromUid === user.uid) {
         showToast(t('settings.cannotLinkSelf') || 'Cannot link with yourself', 'error');
         setIsClaimingCode(false);
@@ -1229,7 +1414,11 @@ function MainApp() {
   };
 
   const handleAcceptPartnerRequest = async (req: PartnerRequest) => {
-    if (!user || !exchangeKey || !kek) return;
+    if (!user || !exchangeKey || !kek || !profile) return;
+    if (isPartnerAccount || profile.subscriptionTier !== 'premium') {
+      showToast('Partner koppelen is alleen beschikbaar voor de betaalde versie.', 'error');
+      return;
+    }
     try {
       const partnerUid = req.respondentUid;
       if (!partnerUid) {
@@ -1409,7 +1598,7 @@ function MainApp() {
     if (!user || !ck || !profile?.profileId) return;
 
     // Check free tier limit (max 3 sessions)
-    if (profile?.subscriptionTier === 'free' && sessions.length >= 3) {
+    if (isFreeTierAccount && sessions.length >= 3) {
       showToast(t('auth.alerts.freeLimitSessions'), 'error');
       handleUpgrade();
       return;
@@ -1438,9 +1627,32 @@ function MainApp() {
       partnerProfileId = profile.partnerId;
     }
 
+    let canonicalOwnerUid = user.uid;
+    let canonicalPartnerUid: string | undefined;
+
+    if (newSessionConfig.type === 'couple') {
+      const isPartnerDevice = profile.accountType === 'partner' && !!profile.mainAccountUid;
+      if (isPartnerDevice && profile.mainAccountUid) {
+        canonicalOwnerUid = profile.mainAccountUid;
+        canonicalPartnerUid = user.uid;
+        try {
+          const mainSnap = await getDoc(doc(db, 'users', profile.mainAccountUid));
+          if (mainSnap.exists()) {
+            const mainProfile = mainSnap.data() as UserProfile;
+            ownerProfileId = mainProfile.profileId || ownerProfileId;
+            partnerProfileId = mainProfile.partnerId || partnerProfileId || profile.profileId;
+          }
+        } catch (e) {
+          console.warn('Unable to load main profile for canonical session ownership', e);
+        }
+      } else {
+        canonicalPartnerUid = profile.partnerUid;
+      }
+    }
+
     const sessionData: any = {
       type: newSessionConfig.type,
-      ownerUid: user.uid, // User account owner (for access control)
+      ownerUid: canonicalOwnerUid, // Canonical owner for shared access control
       ownerProfileId,
       coachPersona: newSessionConfig.persona,
       coachGender: newSessionConfig.gender,
@@ -1449,6 +1661,11 @@ function MainApp() {
       messageCount: 0,
       wrappedSSK: wrappedSSK
     };
+
+    // Set partner account/profile metadata for couple sessions
+    if (canonicalPartnerUid) {
+      sessionData.partnerUid = canonicalPartnerUid;
+    }
 
     // Set partner profile ID for couple sessions
     if (partnerProfileId) {
@@ -1603,6 +1820,9 @@ function MainApp() {
         // Open summary modal automatically
         setSummary(result.summary);
 
+        const canonicalOwnerUid = activeSession.ownerUid || user!.uid;
+        const canonicalPartnerUid = activeSession.type === 'couple' ? (activeSession.partnerUid || null) : null;
+
         // Always save a Session Summary entry to the timeline for all users
         const summaryTitle = language === 'nl' ? 'Sessie Samenvatting' : 'Session Summary';
         const encryptedTimelineTitle = await Encryption.encryptText(summaryTitle, activeSSK);
@@ -1610,8 +1830,8 @@ function MainApp() {
         
         await addDoc(collection(db, 'timeline'), {
           sessionId: activeSession.id,
-          ownerUid: user!.uid,
-          partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+          ownerUid: canonicalOwnerUid,
+          partnerUid: canonicalPartnerUid,
           type: 'milestone',
           title: encryptedTimelineTitle.ciphertext,
           titleIv: encryptedTimelineTitle.iv,
@@ -1629,8 +1849,8 @@ function MainApp() {
               const encryptedDescription = await Encryption.encryptText(entry.description, activeSSK);
               await addDoc(collection(db, 'timeline'), {
                 sessionId: activeSession.id,
-                ownerUid: user!.uid,
-                partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+                ownerUid: canonicalOwnerUid,
+                partnerUid: canonicalPartnerUid,
                 type: entry.type,
                 title: encryptedTitle.ciphertext,
                 titleIv: encryptedTitle.iv,
@@ -1650,8 +1870,8 @@ function MainApp() {
             const encryptedDescription = await Encryption.encryptText(task.description, activeSSK);
             await addDoc(collection(db, 'homework'), {
               sessionId: activeSession.id,
-              ownerUid: user!.uid,
-              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+              ownerUid: canonicalOwnerUid,
+              partnerUid: canonicalPartnerUid,
               title: encryptedTitle.ciphertext,
               titleIv: encryptedTitle.iv,
               description: encryptedDescription.ciphertext,
@@ -1667,8 +1887,8 @@ function MainApp() {
             const encryptedHWTimelineDesc = await Encryption.encryptText(task.description, activeSSK);
             await addDoc(collection(db, 'timeline'), {
               sessionId: activeSession.id,
-              ownerUid: user!.uid,
-              partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+              ownerUid: canonicalOwnerUid,
+              partnerUid: canonicalPartnerUid,
               type: 'insight',
               title: encryptedHWTimelineTitle.ciphertext,
               titleIv: encryptedHWTimelineTitle.iv,
@@ -1715,8 +1935,8 @@ function MainApp() {
               const encryptedMeta = await Encryption.encryptText(metaSummaryText, ck!);
               await addDoc(collection(db, 'users', user!.uid, 'session_meta_summaries'), {
                 uid: user!.uid,
-                ownerUid: user!.uid,
-                partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+                ownerUid: canonicalOwnerUid,
+                partnerUid: canonicalPartnerUid,
                 sessionIds: lastSessions.map(s => s.id),
                 startSessionIndex: archivedCount - AI_CONFIG.SESSION_META_SUMMARY_INTERVAL,
                 endSessionIndex: archivedCount,
@@ -1789,7 +2009,7 @@ function MainApp() {
     if (!activeSession || !activeSSK || !newMessage.trim()) return;
 
     // Free tier check
-    if (profile?.subscriptionTier === 'free' && activeSession.messageCount >= 40) {
+    if (isFreeTierAccount && activeSession.messageCount >= 40) {
       showToast(t('auth.alerts.freeLimit'), 'error');
       return;
     }
@@ -1801,12 +2021,23 @@ function MainApp() {
       // Encrypt message with SSK
       const encrypted = await Encryption.encryptText(text, activeSSK);
 
-      const senderUid = user!.uid; // Always save the user account owner
-      // Use selectedSpeakerUid for couple sessions (tracks who is currently speaking)
-      // Falls back to profile.profileId for personal sessions or if not set
-      const senderProfileId = (activeSession.type === 'couple' && selectedSpeakerUid) 
-        ? selectedSpeakerUid 
-        : profile?.profileId;
+      const senderUid = user!.uid;
+      let senderProfileId = profile?.profileId;
+
+      // In shared sessions, sender identity is determined by account role/device,
+      // not by the UI speaker toggle.
+      if (activeSession.type === 'couple') {
+        if (isSharedDeviceMode) {
+          senderProfileId = selectedSpeakerUid || profile?.profileId;
+        } else {
+          const isPartnerDevice = profile?.accountType === 'partner' && !!profile?.mainAccountUid;
+          if (isPartnerDevice) {
+            senderProfileId = activeSession.partnerProfileId || profile?.profileId;
+          } else {
+            senderProfileId = activeSession.ownerProfileId || profile?.profileId;
+          }
+        }
+      }
 
       await addDoc(collection(db, 'sessions', activeSession.id, 'messages'), {
         senderUid,
@@ -1868,8 +2099,8 @@ function MainApp() {
               const encryptedDescription = await Encryption.encryptText(entry.description, activeSSK);
               await addDoc(collection(db, 'timeline'), {
                 sessionId: activeSession.id,
-                ownerUid: user!.uid,
-                partnerUid: activeSession.type === 'couple' ? (profile?.partnerUid || null) : null,
+                ownerUid: activeSession.ownerUid || user!.uid,
+                partnerUid: activeSession.type === 'couple' ? (activeSession.partnerUid || null) : null,
                 type: entry.type,
                 title: encryptedTitle.ciphertext,
                 titleIv: encryptedTitle.iv,
@@ -2261,7 +2492,7 @@ function MainApp() {
         });
 
         // Auto-select next speaker in couple sessions
-        if (activeSession.type === 'couple' && aiResult.nextSpeaker) {
+        if (activeSession.type === 'couple' && isSharedDeviceMode && aiResult.nextSpeaker) {
           console.log('DEBUG: Condition met, setting nextSpeaker:', aiResult.nextSpeaker);
           if (aiResult.nextSpeaker === 'user') {
             console.log('DEBUG: Setting speaker to current profile:', profile?.profileId);
@@ -2414,7 +2645,84 @@ function MainApp() {
     );
   }
 
-  if (!isPinVerified) {
+  // New users must choose account flow before PIN setup.
+  if (user && !profile && !preProfileChoice) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-md w-full space-y-8">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-4">
+              <Users className="w-8 h-8 text-emerald-600" />
+            </div>
+            <h1 className="font-serif font-bold text-3xl text-stone-900">Hoe wil je starten?</h1>
+            <p className="text-stone-500">Kies eerst of je een nieuw profiel maakt of koppelt met je partner.</p>
+          </div>
+
+          <div className="space-y-4 bg-white p-8 rounded-3xl border border-stone-200 shadow-sm">
+            <button
+              onClick={() => {
+                setPreProfileChoice('own');
+                setAccountType('own');
+                setSetupStep(1);
+              }}
+              className="w-full p-6 text-left border-2 border-stone-200 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all space-y-2"
+            >
+              <h3 className="font-bold text-lg text-stone-900">Nieuw profiel aanmaken</h3>
+              <p className="text-sm text-stone-500">Maak eerst je pincode aan en stel daarna je profiel in.</p>
+            </button>
+
+            <button
+              onClick={async () => {
+                if (!user) return;
+                if (!user.email) {
+                  showToast('Geen e-mailadres gevonden voor dit account.', 'error');
+                  return;
+                }
+                try {
+                  await setDoc(doc(db, 'users', user.uid), {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName || 'Anonymous',
+                    photoURL: user.photoURL || '',
+                    subscriptionTier: 'partner',
+                    language: 'nl',
+                    accountType: 'partner',
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                  }, { merge: true });
+
+                  setPreProfileChoice('partner');
+                  setAccountType('partner');
+                  setSetupStep(2);
+                  setIsPinVerified(true);
+                } catch (e) {
+                  console.error('Failed to initialize partner profile shell', e);
+                  showToast('Kon partner-flow niet starten. Probeer opnieuw.', 'error');
+                }
+              }}
+              className="w-full p-6 text-left border-2 border-stone-200 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all space-y-2"
+            >
+              <h3 className="font-bold text-lg text-stone-900">Koppelen aan partner-account</h3>
+              <p className="text-sm text-stone-500">Verbind met een code van je partner. Je hoeft nu nog geen pincode te maken.</p>
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (user && !profile && preProfileChoice === 'partner') {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
+        <div className="max-w-sm w-full bg-white p-8 rounded-3xl shadow-xl border border-stone-200 text-center space-y-4">
+          <Loader className="w-8 h-8 mx-auto text-emerald-600 animate-spin" />
+          <p className="text-stone-700">Partner-profiel wordt voorbereid...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isPinVerified && preProfileChoice !== 'partner' && !isUnlinkedPartnerFlow) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-sm w-full bg-white p-8 rounded-3xl shadow-xl border border-stone-200">
@@ -2432,7 +2740,18 @@ function MainApp() {
             </p>
           </div>
 
-          <div className="space-y-6">
+          <form
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (pin.length < 6) return;
+              if (profile) {
+                handleVerifyPin();
+              } else {
+                handleSetupPin();
+              }
+            }}
+          >
             <div>
               <input 
                 type="text"
@@ -2457,7 +2776,7 @@ function MainApp() {
               </div>
             </div>
             <button 
-              onClick={profile ? handleVerifyPin : handleSetupPin}
+              type="submit"
               disabled={pin.length < 6}
               className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
@@ -2467,13 +2786,13 @@ function MainApp() {
               <Shield className="inline w-3 h-3 mr-1" />
               {t('auth.zeroKnowledge')}
             </p>
-          </div>
+          </form>
         </motion.div>
       </div>
     );
   }
 
-  if (isProfileIncomplete && view !== 'settings') {
+  if (isProfileIncomplete) {
     return (
       <div className="h-screen bg-stone-50 flex flex-col p-6 overflow-y-auto pt-safe pb-safe">
         {/* Progress Indicator */}
@@ -2776,8 +3095,9 @@ function MainApp() {
                           status: 'claimed'
                         });
 
-                        // Success - proceed to coach selection
-                        setSetupStep(3);
+                        // Success - partner waits for approval/sync; no coach selection step needed here.
+                        setPartnerConnectionCode('');
+                        showToast('Code geclaimd. Wachten op goedkeuring van hoofdaccount...', 'success');
                       } catch (err) {
                         console.error('Partner connection error:', err);
                         setConnectionCodeError(err instanceof Error ? err.message : 'Connection failed');
@@ -2939,14 +3259,16 @@ function MainApp() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="font-serif text-2xl font-bold text-stone-900">
-                        {profile?.partnerUid ? (
-                          t('dashboard.welcomePartner', { 
-                            name: decryptedProfile.name || profile.displayName, 
-                            partner: decryptedProfile.partnerName || 'Partner' 
-                          })
-                        ) : (
-                          t('dashboard.welcome', { name: decryptedProfile.name || profile.displayName })
-                        )}
+                        {isSharedDeviceMode
+                          ? t('dashboard.welcomePartner', {
+                              name: decryptedProfile.name || profile.displayName,
+                              partner: decryptedProfile.partnerName || 'Partner'
+                            })
+                          : t('dashboard.welcome', {
+                              name: isPartnerAccount
+                                ? (decryptedProfile.partnerName || profile.displayName)
+                                : (decryptedProfile.name || profile.displayName)
+                            })}
                       </h2>
                       <p className="text-xs text-stone-500 mt-1">
                         {new Date().toLocaleDateString(language === 'nl' ? 'nl-NL' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -3580,6 +3902,32 @@ function MainApp() {
                   </div>
                 )}
 
+                {!isPartnerAccount && !!profile?.partnerUid && (
+                  <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Shared Device Fallback</p>
+                        <p className="text-xs text-stone-600">Standaard gebruikt ieder partner een eigen device. Zet dit aan om op dit hoofdaccount ook samen op 1 device te kunnen chatten.</p>
+                      </div>
+                      <button
+                        onClick={handleToggleSharedDeviceFallback}
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                          sharedDeviceFallbackEnabled ? "bg-emerald-600" : "bg-stone-300"
+                        )}
+                        aria-label="Toggle shared device fallback"
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-5 w-5 transform rounded-full bg-white transition-transform",
+                            sharedDeviceFallbackEnabled ? "translate-x-5" : "translate-x-1"
+                          )}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="pt-4 border-t border-stone-100 space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-stone-600">{t('settings.subscription')}</span>
@@ -3739,12 +4087,16 @@ function MainApp() {
                   <div className="space-y-3">
                     <p className="text-xs font-bold text-stone-400 uppercase tracking-widest">{t('settings.partnerConnection')}</p>
                     {profile?.partnerUid ? (
-                      <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                      <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 space-y-1">
                         <div className="flex items-center gap-2">
                           <Users className="w-4 h-4 text-emerald-600" />
                           <span className="text-sm font-medium text-emerald-900">{t('settings.partnerLinked')}</span>
                         </div>
-                        <span className="text-[10px] font-mono text-emerald-600">{profile.partnerUid.slice(0, 8)}...</span>
+                        <p className="text-xs text-emerald-900 font-medium">
+                          {isPartnerAccount
+                            ? `Gekoppeld aan hoofdaccount: ${linkedAccountSummary?.linkedDisplayName || '-'} (${linkedAccountSummary?.linkedEmail || '-'})`
+                            : `Gekoppeld aan partneraccount: ${linkedAccountSummary?.linkedDisplayName || '-'} (${linkedAccountSummary?.linkedEmail || '-'})`}
+                        </p>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -3837,7 +4189,7 @@ function MainApp() {
                   </div>
 
                   {/* ✅ FEATURE: Partner Device Management - Generate Connection Code */}
-                  {profile?.subscriptionTier === 'premium' && (
+                  {!isPartnerAccount && profile?.subscriptionTier === 'premium' && (
                     <div className="space-y-3">
                       <p className="text-xs font-bold text-stone-400 uppercase tracking-widest">Partner Device Setup</p>
                       <div className="space-y-3">
@@ -3901,7 +4253,7 @@ function MainApp() {
               </div>
 
               <div className="space-y-3">
-                {profile?.subscriptionTier === 'free' && (
+                {isFreeTierAccount && (
                   <div className="p-6 bg-stone-900 text-white rounded-3xl shadow-xl border border-stone-800 space-y-4 mb-4 overflow-hidden relative">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -mr-16 -mt-16 blur-3xl" />
                     <div className="relative">
@@ -3965,11 +4317,78 @@ function MainApp() {
                   <LogOut className="w-5 h-5" />
                   Sign Out
                 </button>
+
+                <button
+                  onClick={() => setShowDeleteAccountModal(true)}
+                  className="w-full flex items-center justify-center gap-2 py-4 bg-white border border-red-200 text-red-700 rounded-2xl font-bold"
+                >
+                  <AlertTriangle className="w-5 h-5" />
+                  Account Verwijderen (GDPR)
+                </button>
                 <p className="text-center text-[10px] text-stone-400 uppercase tracking-widest font-bold">
                   <Shield className="inline w-3 h-3 mr-1" />
                   Restart Our Love v1.0.0
                 </p>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Delete Account Modal */}
+        <AnimatePresence>
+          {showDeleteAccountModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                className="bg-white w-full max-w-md rounded-t-[32px] sm:rounded-[32px] p-8 space-y-6"
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-serif font-bold text-stone-900">Account Verwijderen</h2>
+                  <button onClick={() => setShowDeleteAccountModal(false)} className="p-2 text-stone-400">
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-900 space-y-2">
+                  <p>Deze actie verwijdert je account en gekoppelde data permanent uit de database.</p>
+                  <p>Als er een gekoppeld partneraccount bestaat, wordt dat partneraccount ook permanent verwijderd.</p>
+                  <p className="text-xs">Actieve web-abonnementen (Stripe) worden geprobeerd te stoppen. App Store/Play Store abonnementen moet je zelf in de store annuleren.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Typ VERWIJDER om te bevestigen</label>
+                  <input
+                    type="text"
+                    value={deleteAccountConfirmText}
+                    onChange={(e) => setDeleteAccountConfirmText(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-2xl p-4 focus:outline-none focus:border-red-500 transition-all"
+                    placeholder="VERWIJDER"
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteAccountModal(false)}
+                    className="flex-1 py-3 bg-stone-100 text-stone-700 rounded-2xl font-bold"
+                  >
+                    Annuleren
+                  </button>
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={isDeletingAccount || deleteAccountConfirmText.trim().toUpperCase() !== 'VERWIJDER'}
+                    className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold disabled:opacity-50"
+                  >
+                    {isDeletingAccount ? 'Verwijderen...' : 'Permanent Verwijderen'}
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -4269,7 +4688,32 @@ function MainApp() {
 
                 {activeSession.status !== 'closed' && activeSession.status !== 'beeindigd' ? (
                   <>
-
+                    {activeSession.type === 'couple' && isSharedDeviceMode && (
+                      <div className="mb-2 flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedSpeakerUid(activeSession.ownerProfileId || profile?.profileId || null)}
+                          className={cn(
+                            "px-3 py-1 rounded-full text-xs font-bold border transition-all",
+                            (selectedSpeakerUid === (activeSession.ownerProfileId || profile?.profileId))
+                              ? "bg-emerald-600 text-white border-emerald-600"
+                              : "bg-white text-stone-600 border-stone-200"
+                          )}
+                        >
+                          {decryptedProfile.name || t('chat.you')}
+                        </button>
+                        <button
+                          onClick={() => setSelectedSpeakerUid(activeSession.partnerProfileId || profile?.partnerId || null)}
+                          className={cn(
+                            "px-3 py-1 rounded-full text-xs font-bold border transition-all",
+                            (selectedSpeakerUid === (activeSession.partnerProfileId || profile?.partnerId))
+                              ? "bg-emerald-600 text-white border-emerald-600"
+                              : "bg-white text-stone-600 border-stone-200"
+                          )}
+                        >
+                          {decryptedProfile.partnerName || t('chat.partner')}
+                        </button>
+                      </div>
+                    )}
 
                     <div className="flex items-end gap-2">
                       <button 
@@ -4291,9 +4735,14 @@ function MainApp() {
                           }
                         }}
                         placeholder={activeSession.type === 'couple' 
-                          ? `${selectedSpeakerUid === profile?.profileId 
+                          ? `${isSharedDeviceMode
+                            ? (selectedSpeakerUid === (activeSession.ownerProfileId || profile?.profileId)
                               ? (decryptedProfile.name || t('chat.you'))
-                              : (decryptedProfile.partnerName || t('chat.partner'))}: ${t('sessions.messagePlaceholder')}`
+                              : (decryptedProfile.partnerName || t('chat.partner')))
+                            : (isPartnerAccount
+                              ? (decryptedProfile.partnerName || t('chat.you'))
+                              : (decryptedProfile.name || t('chat.you')))
+                          }: ${t('sessions.messagePlaceholder')}`
                           : t('sessions.messagePlaceholder')}
                         className="flex-1 bg-stone-50 border border-stone-200 rounded-2xl p-3 focus:outline-none focus:border-emerald-500 transition-all resize-none min-h-[44px] max-h-[120px] text-sm"
                       />

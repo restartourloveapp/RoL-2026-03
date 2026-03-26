@@ -58,6 +58,15 @@ async function logAuditEvent(
   }
 }
 
+async function deleteQueryDocs(querySnap: admin.firestore.QuerySnapshot): Promise<number> {
+  let deleted = 0;
+  for (const d of querySnap.docs) {
+    await d.ref.delete();
+    deleted++;
+  }
+  return deleted;
+}
+
 // ✅ SECURITY FIX: Generate time-limited tokens for partner requests
 function generatePartnerToken(): { token: string; expiresAt: Date } {
   const token = crypto.randomBytes(32).toString('hex');
@@ -521,7 +530,7 @@ async function startServer() {
         role: 'partner',
         pinSalt,        // Copy PIN from main account (now verified)
         pinVerifier,
-        subscriptionTier: mainAccountData.subscriptionTier,
+        subscriptionTier: 'partner',
         language: mainAccountData.language || 'nl',
         profileId: mainAccountData.profileId,
         partnerId: mainAccountData.profileId || null,
@@ -666,6 +675,168 @@ async function startServer() {
       }
       
       res.status(500).json({ error: 'Sessie kon niet worden verwijderd. Probeer het later opnieuw.' });
+    }
+  });
+
+  // GDPR: delete account and related data
+  app.post("/api/delete-account", rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 3,
+    message: 'Too many account deletion attempts, please try again later',
+  }), async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing bearer token' });
+      }
+
+      const idToken = authHeader.slice('Bearer '.length).trim();
+      let decoded: admin.auth.DecodedIdToken;
+      try {
+        decoded = await admin.auth().verifyIdToken(idToken, true);
+      } catch (e) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
+
+      const uid = decoded.uid;
+      const authTime = decoded.auth_time || 0;
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec - authTime > 15 * 60) {
+        return res.status(401).json({
+          error: 'Recent login required',
+          requiresRecentLogin: true,
+        });
+      }
+
+      const firestore = getDb();
+      const userRef = firestore.collection('users').doc(uid);
+      const userSnap = await userRef.get();
+      const userData = userSnap.exists ? (userSnap.data() || {}) : {};
+
+      const linkedUid = (typeof userData.partnerUid === 'string' && userData.partnerUid !== uid)
+        ? userData.partnerUid
+        : (typeof userData.mainAccountUid === 'string' && userData.mainAccountUid !== uid ? userData.mainAccountUid : null);
+
+      const targetUids = new Set<string>([uid]);
+      if (linkedUid) targetUids.add(linkedUid);
+
+      const userDocs = new Map<string, any>();
+      for (const targetUid of targetUids) {
+        const snap = await firestore.collection('users').doc(targetUid).get();
+        userDocs.set(targetUid, snap.exists ? (snap.data() || {}) : {});
+      }
+
+      // Best-effort cancellation for Stripe-managed web subscriptions for all accounts being deleted.
+      let cancelledStripeSubscriptions = 0;
+      const stripeEmails = new Set<string>();
+      if (decoded.email) stripeEmails.add(decoded.email);
+      for (const targetUid of targetUids) {
+        const email = userDocs.get(targetUid)?.email;
+        if (email && typeof email === 'string') stripeEmails.add(email);
+      }
+      for (const email of stripeEmails) {
+        try {
+          const stripeClient = getStripe();
+          const customers = await stripeClient.customers.list({ email, limit: 10 });
+          for (const customer of customers.data) {
+            if (!customer.id) continue;
+            const subs = await stripeClient.subscriptions.list({
+              customer: customer.id,
+              status: 'all',
+              limit: 100,
+            });
+            for (const sub of subs.data) {
+              if (['active', 'trialing', 'past_due', 'unpaid', 'incomplete'].includes(sub.status)) {
+                await stripeClient.subscriptions.cancel(sub.id);
+                cancelledStripeSubscriptions++;
+              }
+            }
+          }
+        } catch (stripeErr) {
+          console.warn('Stripe cancellation skipped/failed during account deletion', { email, stripeErr });
+        }
+      }
+
+      // Delete session meta summaries for all target users.
+      for (const targetUid of targetUids) {
+        const targetRef = firestore.collection('users').doc(targetUid);
+        const metaSnap = await targetRef.collection('session_meta_summaries').get();
+        await deleteQueryDocs(metaSnap);
+      }
+
+      // Delete all sessions related to either account (owner or partner), including subcollections.
+      const sessionMap = new Map<string, admin.firestore.DocumentReference>();
+      for (const targetUid of targetUids) {
+        const [ownerSessions, partnerSessions] = await Promise.all([
+          firestore.collection('sessions').where('ownerUid', '==', targetUid).get(),
+          firestore.collection('sessions').where('partnerUid', '==', targetUid).get(),
+        ]);
+        ownerSessions.docs.forEach((d) => sessionMap.set(d.id, d.ref));
+        partnerSessions.docs.forEach((d) => sessionMap.set(d.id, d.ref));
+      }
+
+      for (const sessionRef of sessionMap.values()) {
+        const [messagesSnap, summariesSnap] = await Promise.all([
+          sessionRef.collection('messages').get(),
+          sessionRef.collection('message_summaries').get(),
+        ]);
+        await deleteQueryDocs(messagesSnap);
+        await deleteQueryDocs(summariesSnap);
+        await sessionRef.delete();
+      }
+
+      // Delete related top-level data for all accounts being deleted.
+      const relatedSnapshots: admin.firestore.QuerySnapshot[] = [];
+      for (const targetUid of targetUids) {
+        const snaps = await Promise.all([
+          firestore.collection('timeline').where('ownerUid', '==', targetUid).get(),
+          firestore.collection('timeline').where('partnerUid', '==', targetUid).get(),
+          firestore.collection('homework').where('ownerUid', '==', targetUid).get(),
+          firestore.collection('homework').where('partnerUid', '==', targetUid).get(),
+          firestore.collection('tickets').where('userUid', '==', targetUid).get(),
+          firestore.collection('auditLogs').where('userId', '==', targetUid).get(),
+          firestore.collection('partner_requests').where('fromUid', '==', targetUid).get(),
+          firestore.collection('partner_requests').where('respondentUid', '==', targetUid).get(),
+          firestore.collection('partnerConnectionCodes').where('mainAccountUid', '==', targetUid).get(),
+          firestore.collection('partnerConnectionCodes').where('partnerAccountUid', '==', targetUid).get(),
+          firestore.collection('partnerTokens').where('fromUserId', '==', targetUid).get(),
+        ]);
+        relatedSnapshots.push(...snaps);
+      }
+
+      const seenRefs = new Set<string>();
+      for (const snap of relatedSnapshots) {
+        for (const d of snap.docs) {
+          if (!seenRefs.has(d.ref.path)) {
+            seenRefs.add(d.ref.path);
+            await d.ref.delete();
+          }
+        }
+      }
+
+      // Delete user docs and auth users for all accounts in scope.
+      for (const targetUid of targetUids) {
+        await firestore.collection('users').doc(targetUid).delete();
+      }
+      for (const targetUid of targetUids) {
+        try {
+          await admin.auth().deleteUser(targetUid);
+        } catch (authErr: any) {
+          if (authErr?.code !== 'auth/user-not-found') {
+            throw authErr;
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        deletedPartnerAccount: targetUids.size > 1,
+        cancelledStripeSubscriptions,
+        subscriptionNotice: 'Web-abonnementen via Stripe zijn stopgezet indien gevonden. Voor Apple App Store of Google Play moet je abonnement apart in de store opzeggen.',
+      });
+    } catch (e: any) {
+      console.error('Account deletion error:', e);
+      res.status(500).json({ error: 'Account kon niet worden verwijderd. Probeer opnieuw.' });
     }
   });
 
