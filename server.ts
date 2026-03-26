@@ -152,6 +152,65 @@ async function wipeAccountDataBeforePartnerConversion(userId: string): Promise<v
   }
 }
 
+// Move legacy partner-personal data from main account ownership to partner account ownership.
+// This is a one-time migration when partner device mode is activated.
+async function migratePartnerPersonalDataToPartnerProfile(
+  mainAccountUid: string,
+  partnerAccountUid: string,
+  partnerProfileId: string | null | undefined
+): Promise<{ sessions: number; timeline: number; homework: number }> {
+  const counters = { sessions: 0, timeline: 0, homework: 0 };
+  if (!partnerProfileId) return counters;
+
+  const firestore = getDb();
+  const personalSessionsSnap = await firestore.collection('sessions')
+    .where('ownerUid', '==', mainAccountUid)
+    .where('type', '==', 'personal')
+    .get();
+
+  for (const sessionDoc of personalSessionsSnap.docs) {
+    const session = sessionDoc.data();
+    if (session.ownerProfileId !== partnerProfileId) {
+      continue;
+    }
+
+    await sessionDoc.ref.update({
+      ownerUid: partnerAccountUid,
+      partnerUid: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    counters.sessions++;
+
+    const timelineSnap = await firestore.collection('timeline')
+      .where('sessionId', '==', sessionDoc.id)
+      .where('ownerUid', '==', mainAccountUid)
+      .get();
+
+    for (const entry of timelineSnap.docs) {
+      await entry.ref.update({
+        ownerUid: partnerAccountUid,
+        partnerUid: admin.firestore.FieldValue.delete(),
+      });
+      counters.timeline++;
+    }
+
+    const homeworkSnap = await firestore.collection('homework')
+      .where('sessionId', '==', sessionDoc.id)
+      .where('ownerUid', '==', mainAccountUid)
+      .get();
+
+    for (const task of homeworkSnap.docs) {
+      await task.ref.update({
+        ownerUid: partnerAccountUid,
+        partnerUid: admin.firestore.FieldValue.delete(),
+      });
+      counters.homework++;
+    }
+  }
+
+  return counters;
+}
+
 function getDb() {
   if (!db) {
     if (admin.apps.length === 0) {
@@ -523,6 +582,11 @@ async function startServer() {
       // Wipe partner account personal data
       await wipeAccountDataBeforePartnerConversion(partnerAccountUid);
       
+      const partnerProfileId = typeof mainAccountData.partnerId === 'string' && mainAccountData.partnerId
+        ? mainAccountData.partnerId
+        : mainAccountData.profileId;
+      const mainProfileId = typeof mainAccountData.profileId === 'string' ? mainAccountData.profileId : null;
+
       // Update partner account with base info from main account and make it a partner account
       await firestore.collection('users').doc(partnerAccountUid).update({
         mainAccountUid,
@@ -530,12 +594,30 @@ async function startServer() {
         role: 'partner',
         pinSalt,        // Copy PIN from main account (now verified)
         pinVerifier,
+        wrappedCK: mainAccountData.wrappedCK,
         subscriptionTier: 'partner',
         language: mainAccountData.language || 'nl',
-        profileId: mainAccountData.profileId,
-        partnerId: mainAccountData.profileId || null,
+        profileId: partnerProfileId,
+        partnerId: mainProfileId,
+        profileName: mainAccountData.partnerName || null,
+        profilePronouns: mainAccountData.partnerPronouns || null,
+        partnerName: mainAccountData.profileName || null,
+        partnerPronouns: mainAccountData.profilePronouns || null,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+      // Ensure main account points to this partner device account.
+      await firestore.collection('users').doc(mainAccountUid).update({
+        partnerUid: partnerAccountUid,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Migrate legacy shared-device partner personal data to partner ownership (single source of truth).
+      const migration = await migratePartnerPersonalDataToPartnerProfile(
+        mainAccountUid,
+        partnerAccountUid,
+        partnerProfileId
+      );
       
       // Mark code as used
       await codeDoc.ref.update({
@@ -555,12 +637,14 @@ async function startServer() {
         partnerAccountUid,
         connectionCode,
         verificationMethod: 'password_verified_via_idtoken',
+        migration,
       }, req);
       
       res.json({ 
         success: true,
         message: 'Successfully connected as partner device account',
         mainAccountUid,
+        migration,
       });
     } catch (e: any) {
       console.error('Partner device connection error:', e);

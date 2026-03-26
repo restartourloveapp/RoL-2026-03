@@ -1652,6 +1652,17 @@ function MainApp() {
   const handleCreateSession = async () => {
     if (!user || !ck || !profile?.profileId) return;
 
+    const isStrictPartnerMode = hasLinkedPartnerDevice && !isSharedDeviceMode;
+    if (
+      newSessionConfig.type === 'personal' &&
+      newSessionConfig.personalSessionOwnerId === 'partner' &&
+      isStrictPartnerMode &&
+      !isPartnerAccount
+    ) {
+      showToast('In partner mode moet de partner een persoonlijke sessie starten op het partner device.', 'error');
+      return;
+    }
+
     // Check free tier limit (max 3 sessions)
     if (isFreeTierAccount && sessions.length >= 3) {
       showToast(t('auth.alerts.freeLimitSessions'), 'error');
@@ -5121,13 +5132,13 @@ function MainApp() {
                             setNewSessionConfig(prev => ({ ...prev, personalSessionOwnerId: 'partner' }));
                           }
                         }}
-                        disabled={!profile?.partnerId}
+                        disabled={!profile?.partnerId || (hasLinkedPartnerDevice && !isSharedDeviceMode && !isPartnerAccount)}
                         className={cn(
                           "p-4 rounded-2xl border-2 transition-all text-center",
                           newSessionConfig.personalSessionOwnerId === 'partner'
                             ? "border-emerald-500 bg-emerald-50"
                             : "border-stone-100 hover:border-stone-300",
-                          !profile?.partnerId && "opacity-50 cursor-not-allowed"
+                          (!profile?.partnerId || (hasLinkedPartnerDevice && !isSharedDeviceMode && !isPartnerAccount)) && "opacity-50 cursor-not-allowed"
                         )}
                       >
                         <p className="font-bold text-sm text-stone-900">{decryptedProfile.partnerName || t('chat.partner')}</p>
