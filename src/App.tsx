@@ -144,18 +144,9 @@ interface ChatMessage {
   decryptedText?: string;
 }
 
-interface PartnerRequest {
-  id: string;
-  fromUid: string;
-  fromEmail: string;
-  code: string;
+interface Homework {
   respondentUid?: string;
   respondentEmail?: string;
-  status: 'pending' | 'claimed' | 'accepted' | 'rejected';
-  createdAt: any;
-}
-
-interface Homework {
   id: string;
   sessionId: string;
   ownerUid: string;
@@ -359,16 +350,11 @@ function MainApp() {
   // ✅ FEATURE: Partner Device Account State
   const [accountType, setAccountType] = useState<'own' | 'partner' | null>(null);
   const [partnerConnectionCode, setPartnerConnectionCode] = useState('');
-  const [partnerConnectionCodeInput, setPartnerConnectionCodeInput] = useState('');
   const [generatedConnectionCode, setGeneratedConnectionCode] = useState<string | null>(null);
   const [connectionCodeExpiresAt, setConnectionCodeExpiresAt] = useState<Date | null>(null);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [isConnectingAsPartner, setIsConnectingAsPartner] = useState(false);
   const [connectionCodeError, setConnectionCodeError] = useState<string | null>(null);
-  const [mainAccountEmail, setMainAccountEmail] = useState('');
-  const [mainAccountPassword, setMainAccountPassword] = useState('');
-  const [confirmedDataWipeout, setConfirmedDataWipeout] = useState(false);
-  const [showPartnerDeviceSettings, setShowPartnerDeviceSettings] = useState(false);
 
   const [decryptedProfile, setDecryptedProfile] = useState<{
     name?: string;
@@ -1405,112 +1391,22 @@ function MainApp() {
     }
   };
 
-  // ✅ FEATURE: Partner Device Account - Generate connection code
-  const handleGeneratePartnerConnectionCode = async () => {
-    if (!user || !profile) return;
-    
-    if (profile.subscriptionTier !== 'paid' && profile.subscriptionTier !== 'partner') {
-      showToast(t('auth.alerts.premiumRequired'), 'error');
-      return;
-    }
-
-    setIsGeneratingCode(true);
-    try {
-      const response = await fetch('/api/generate-partner-connection-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mainAccountUid: user.uid })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        showToast(error.error || 'Failed to generate code', 'error');
-        return;
-      }
-
-      const data = await response.json();
-      setGeneratedConnectionCode(data.code);
-      setConnectionCodeExpiresAt(new Date(data.expiresAt));
-      showToast('Connection code generated successfully', 'success');
-    } catch (error) {
-      console.error('Error generating connection code:', error);
-      showToast('Failed to generate connection code', 'error');
-    } finally {
-      setIsGeneratingCode(false);
-    }
-  };
-
-  // ✅ FEATURE: Partner Device Account - Connect device as partner
-  const handleConnectAsPartnerDevice = async () => {
-    if (!user || !profile || !kek) return;
-
-    if (partnerConnectionCodeInput.length !== 6) {
-      showToast('Connection code must be 6 characters', 'error');
-      return;
-    }
-
-    setIsConnectingAsPartner(true);
-    try {
-      // Get PIN salt and verifier from current account
-      // In real scenario, we'd get this from the main account,
-      // but for now we use the current account's (which will be wiped and replaced)
-      
-      const response = await fetch('/api/connect-as-partner-device', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          partnerAccountUid: user.uid,
-          connectionCode: partnerConnectionCodeInput.toUpperCase(),
-          pinSalt: profile.pinSalt,
-          pinVerifier: profile.pinVerifier
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        showToast(error.error || 'Failed to connect as partner', 'error');
-        return;
-      }
-
-      const data = await response.json();
-      showToast('Successfully connected as partner device!', 'success');
-      
-      // Refresh profile to get updated data
-      if (user) {
-        const profileSnap = await getDoc(doc(db, 'users', user.uid));
-        if (profileSnap.exists()) {
-          const newProfile = profileSnap.data() as UserProfile;
-          setProfile(newProfile);
-          setPartnerConnectionCodeInput('');
-        }
-      }
-      
-      // Close the dialog/form
-      setShowPartnerDeviceSettings(false);
-    } catch (error) {
-      console.error('Error connecting as partner device:', error);
-      showToast('Failed to connect as partner device', 'error');
-    } finally {
-      setIsConnectingAsPartner(false);
-    }
-  };
-
   // ✅ FEATURE: Partner Device Account - Copy code to clipboard
   const handleCopyConnectionCode = async () => {
     if (!generatedConnectionCode) return;
     try {
       await navigator.clipboard.writeText(generatedConnectionCode);
-      showToast('Code copied to clipboard', 'success');
+      showToast(t('settings.codeCopied'), 'success');
     } catch (error) {
       console.error('Error copying code:', error);
-      showToast('Failed to copy code', 'error');
+      showToast(t('settings.copyCodeFailed'), 'error');
     }
   };
 
   // ✅ FEATURE: Partner Device Account - Generate connection code
   const handleGenerateConnectionCode = async () => {
     if (!user || (profile?.subscriptionTier !== 'paid' && profile?.subscriptionTier !== 'partner')) {
-      showToast('Only premium accounts can generate partner connection codes', 'error');
+      showToast(t('auth.alerts.premiumRequired'), 'error');
       return;
     }
 
@@ -1524,19 +1420,30 @@ function MainApp() {
         })
       });
 
+      const rawResponse = await response.text();
+      let data: any = {};
+      try {
+        data = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        throw new Error(t('settings.serverUnavailable'));
+      }
+
       if (!response.ok) {
-        const error = await response.json();
-        showToast(error.error || 'Failed to generate code', 'error');
+        showToast(data?.error || t('settings.generateCodeFailed'), 'error');
         return;
       }
 
-      const data = await response.json();
+      if (!data?.code || !data?.expiresAt) {
+        showToast(t('settings.invalidServerResponse'), 'error');
+        return;
+      }
+
       setGeneratedConnectionCode(data.code);
       setConnectionCodeExpiresAt(new Date(data.expiresAt));
-      showToast('Connection code generated successfully', 'success');
+      showToast(t('settings.connectionCodeGenerated'), 'success');
     } catch (error) {
       console.error('Error generating connection code:', error);
-      showToast('Failed to generate connection code', 'error');
+      showToast(error instanceof Error ? error.message : t('settings.generateCodeFailed'), 'error');
     } finally {
       setIsGeneratingCode(false);
     }
@@ -3080,7 +2987,6 @@ function MainApp() {
                       setSetupStep(0);
                       setPartnerConnectionCode('');
                       setConnectionCodeError(null);
-                      setConfirmedDataWipeout(false);
                     }}
                     className="flex-1 px-6 py-4 border-2 border-stone-200 text-stone-600 rounded-2xl font-bold hover:border-stone-300 transition-all"
                   >
@@ -4177,12 +4083,12 @@ function MainApp() {
                             {isGeneratingCode ? (
                               <>
                                 <Loader className="w-4 h-4 animate-spin" />
-                                Generating...
+                                {t('common.loading')}
                               </>
                             ) : (
                               <>
                                 <Link2 className="w-4 h-4" />
-                                Generate Partner Device Code
+                                {t('settings.generateLinkCode')}
                               </>
                             )}
                           </button>

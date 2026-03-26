@@ -11,7 +11,7 @@
 
 ## Phase 2: Collaboration & Partner Mode (Weeks 4–7)
 - [x] Implement Session Symmetric Keys (SSK) logic
-- [x] Create `/partner_requests` collection and linking workflow (ECDH)
+- [x] Create partner-device connection code workflow (main account + partner account linking)
 - [x] Implement "Owner rewraps SSK for Partner" logic (RK)
 - [x] Couple Chat (Three-Way) with real-time listeners
 - [x] Turn-taking and communication guidance UI (AI-powered Tips)

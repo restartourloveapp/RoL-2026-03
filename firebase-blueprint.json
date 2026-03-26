@@ -270,10 +270,6 @@
       "schema": "Message",
       "description": "Messages within a session"
     },
-    "/partner_requests/{requestId}": {
-      "schema": "PartnerRequest",
-      "description": "Partner linking requests"
-    },
     "/tickets/{ticketId}": {
       "schema": "Ticket",
       "description": "Support tickets"

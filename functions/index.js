@@ -62,76 +62,6 @@ async function syncSharedMainToPartner(mainUid, partnerUid, requestId = null) {
   await batch.commit();
 }
 
-exports.syncPartnerProfileOnAcceptedLink = onDocumentUpdated({
-  document: "partner_requests/{requestId}",
-  region: "europe-west1",
-}, async (event) => {
-  const before = event.data.before.data();
-  const after = event.data.after.data();
-
-  if (!before || !after) {
-    return;
-  }
-
-  // Only react on transition to accepted.
-  if (before.status === after.status || after.status !== "accepted") {
-    return;
-  }
-
-  const mainUid = after.fromUid;
-  const partnerUid = after.respondentUid;
-
-  if (!mainUid || !partnerUid) {
-    logger.warn("Missing fromUid/respondentUid in accepted partner request", { requestId: event.params.requestId });
-    return;
-  }
-
-  if (mainUid === partnerUid) {
-    logger.warn("Refusing to sync profile to same uid", { uid: mainUid, requestId: event.params.requestId });
-    return;
-  }
-
-  const db = admin.firestore();
-  const mainSnap = await db.collection("users").doc(mainUid).get();
-  const mainData = mainSnap.exists ? (mainSnap.data() || {}) : {};
-  if (mainData.subscriptionTier !== "paid") {
-    logger.warn("Skipping partner profile sync because main account is not premium", {
-      requestId: event.params.requestId,
-      mainUid,
-      partnerUid,
-      subscriptionTier: mainData.subscriptionTier || null,
-    });
-    await event.data.after.ref.update({
-      status: "rejected",
-      rejectionReason: "premium-required",
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    return;
-  }
-  await syncSharedMainToPartner(mainUid, partnerUid, event.params.requestId);
-
-  await event.data.after.ref.update({
-    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  await db.collection("auditLogs").add({
-    userId: mainUid,
-    action: "partner_profile_synced_by_cloud_function",
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    details: {
-      partnerUid,
-      requestId: event.params.requestId,
-      copiedFields: copyFields,
-    },
-  });
-
-  logger.info("Partner profile sync completed", {
-    requestId: event.params.requestId,
-    mainUid,
-    partnerUid,
-  });
-});
-
 exports.syncPartnerProfileOnMainProfileUpdate = onDocumentUpdated({
   document: "users/{userId}",
   region: "europe-west1",
@@ -198,35 +128,6 @@ exports.forcePartnerSettingsSync = onCall({
       .get();
     if (!reverseSnap.empty) {
       mainUid = reverseSnap.docs[0].id;
-    }
-  }
-
-  // Legacy fallback: resolve main account from accepted/claimed partner requests.
-  if (!mainUid) {
-    const acceptedSnap = await db.collection("partner_requests")
-      .where("respondentUid", "==", uid)
-      .where("status", "==", "accepted")
-      .limit(1)
-      .get();
-    if (!acceptedSnap.empty) {
-      const req = acceptedSnap.docs[0].data() || {};
-      if (req.fromUid && req.fromUid !== uid) {
-        mainUid = req.fromUid;
-      }
-    }
-  }
-
-  if (!mainUid) {
-    const claimedSnap = await db.collection("partner_requests")
-      .where("respondentUid", "==", uid)
-      .where("status", "==", "claimed")
-      .limit(1)
-      .get();
-    if (!claimedSnap.empty) {
-      const req = claimedSnap.docs[0].data() || {};
-      if (req.fromUid && req.fromUid !== uid) {
-        mainUid = req.fromUid;
-      }
     }
   }
 
