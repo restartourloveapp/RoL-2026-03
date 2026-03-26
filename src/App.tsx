@@ -415,6 +415,7 @@ function MainApp() {
   const isUnlinkedPartnerFlow = !!profile && profile.accountType === 'partner' && !profile.mainAccountUid;
   const [newMessage, setNewMessage] = useState('');
   const [selectedSpeakerUid, setSelectedSpeakerUid] = useState<string | null>(null);
+  const [expectedResponderProfileId, setExpectedResponderProfileId] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => {
@@ -422,6 +423,60 @@ function MainApp() {
       setSelectedSpeakerUid(profile.profileId);  // Always use profileId for proper attribution
     }
   }, [activeSession?.id, user?.uid, profile?.profileId]);
+
+  useEffect(() => {
+    setExpectedResponderProfileId(null);
+  }, [activeSession?.id]);
+
+  const resolveExpectedResponderProfileId = (
+    nextSpeaker: 'user' | 'partner' | 'both' | 'none' | undefined,
+    session?: ChatSession | null
+  ) => {
+    if (!session || session.type !== 'couple') return null;
+    if (nextSpeaker === 'user') return session.ownerProfileId || null;
+    if (nextSpeaker === 'partner') return session.partnerProfileId || null;
+    return null;
+  };
+
+  const currentCoupleProfileId = activeSession?.type === 'couple'
+    ? (isPartnerAccount
+      ? (activeSession.partnerProfileId || profile?.profileId || null)
+      : (activeSession.ownerProfileId || profile?.profileId || null))
+    : (profile?.profileId || null);
+
+  const currentCoupleName = activeSession?.type === 'couple'
+    ? (isPartnerAccount
+      ? (decryptedProfile?.partnerName || t('chat.you'))
+      : (decryptedProfile?.name || t('chat.you')))
+    : t('chat.you');
+
+  const otherCoupleName = activeSession?.type === 'couple'
+    ? (isPartnerAccount
+      ? (decryptedProfile?.name || t('chat.partner'))
+      : (decryptedProfile?.partnerName || t('chat.partner')))
+    : t('chat.partner');
+
+  const expectedResponderName = expectedResponderProfileId
+    ? (expectedResponderProfileId === currentCoupleProfileId ? currentCoupleName : otherCoupleName)
+    : null;
+
+  const partnerDeviceMessagePlaceholder = activeSession?.type === 'couple' && !isSharedDeviceMode
+    ? (expectedResponderProfileId && expectedResponderProfileId !== currentCoupleProfileId
+      ? (language === 'nl'
+        ? `Wachten op antwoord van '${expectedResponderName}'`
+        : `Waiting for a response from '${expectedResponderName}'`)
+      : (language === 'nl'
+        ? `${currentCoupleName}, typ een bericht...`
+        : `${currentCoupleName}, type a message...`))
+    : null;
+
+  const coupleMessagePlaceholder = activeSession?.type === 'couple'
+    ? (isSharedDeviceMode
+      ? `${selectedSpeakerUid === (activeSession.ownerProfileId || profile?.profileId)
+        ? (decryptedProfile?.name || t('chat.you'))
+        : (decryptedProfile?.partnerName || t('chat.partner'))}: ${t('sessions.messagePlaceholder')}`
+      : (partnerDeviceMessagePlaceholder || t('sessions.messagePlaceholder')))
+    : t('sessions.messagePlaceholder');
 
   // Restore partner onboarding step after refresh/reload while link is still pending.
   useEffect(() => {
@@ -1709,6 +1764,8 @@ function MainApp() {
           createdAt: serverTimestamp(),
           role: 'assistant'
         });
+
+        setExpectedResponderProfileId(resolveExpectedResponderProfileId(welcomeMessage.nextSpeaker, newSession));
       }
     } catch (e) {
       console.error("Failed to generate welcome message", e);
@@ -1802,11 +1859,29 @@ function MainApp() {
           role: m.senderUid === user!.uid ? 'user' as const : 'model' as const,
           content: m.decryptedText || ''
         }));
+
+        const filterExplicitHomework = (tasks: Array<{ title?: string; description?: string; dueDate?: string; evidence?: string }> = []) => {
+          return tasks.reduce<Array<{ title: string; description: string; dueDate?: string; evidence?: string }>>((validTasks, task) => {
+            const title = task.title?.trim();
+            const description = task.description?.trim();
+            const evidence = task.evidence?.trim();
+            if (title && description && evidence && evidence.length >= 8) {
+              validTasks.push({
+                title,
+                description,
+                dueDate: task.dueDate,
+                evidence
+              });
+            }
+            return validTasks;
+          }, []);
+        };
         
         const isPremium = profile?.subscriptionTier === 'premium';
         const result = await AI.generateSummary(history, language, isPremium);
+        const explicitHomework = filterExplicitHomework(result.homework || []);
         setSummary(result.summary);
-        setSessionHomework(result.homework || []);
+        setSessionHomework(explicitHomework);
 
         // Save encrypted summary to session document
         const encryptedSummary = await Encryption.encryptText(result.summary, activeSSK);
@@ -1863,8 +1938,8 @@ function MainApp() {
         }
 
         // Save Homework for ALL users (free & premium)
-        if (result.homework && result.homework.length > 0) {
-          for (const task of result.homework) {
+        if (explicitHomework.length > 0) {
+          for (const task of explicitHomework) {
             if (!task.title || !task.description) continue;
             const encryptedTitle = await Encryption.encryptText(task.title, activeSSK);
             const encryptedDescription = await Encryption.encryptText(task.description, activeSSK);
@@ -2514,6 +2589,9 @@ function MainApp() {
           createdAt: serverTimestamp(),
           role: 'assistant'
         });
+
+        const nextResponderProfileId = resolveExpectedResponderProfileId(aiResult.nextSpeaker, activeSession);
+        setExpectedResponderProfileId(nextResponderProfileId);
 
         // Auto-select next speaker in couple sessions
         if (activeSession.type === 'couple' && isSharedDeviceMode && aiResult.nextSpeaker) {
@@ -4758,16 +4836,7 @@ function MainApp() {
                             }
                           }
                         }}
-                        placeholder={activeSession.type === 'couple' 
-                          ? `${isSharedDeviceMode
-                            ? (selectedSpeakerUid === (activeSession.ownerProfileId || profile?.profileId)
-                              ? (decryptedProfile.name || t('chat.you'))
-                              : (decryptedProfile.partnerName || t('chat.partner')))
-                            : (isPartnerAccount
-                              ? (decryptedProfile.partnerName || t('chat.you'))
-                              : (decryptedProfile.name || t('chat.you')))
-                          }: ${t('sessions.messagePlaceholder')}`
-                          : t('sessions.messagePlaceholder')}
+                        placeholder={coupleMessagePlaceholder}
                         className="flex-1 bg-stone-50 border border-stone-200 rounded-2xl p-3 focus:outline-none focus:border-emerald-500 transition-all resize-none min-h-[44px] max-h-[120px] text-sm"
                       />
                       <button 

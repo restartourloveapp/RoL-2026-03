@@ -327,7 +327,7 @@ export async function generateSummary(
 
   const systemInstruction = `You are a relationship expert and coach. Analyze this conversation and provide a deep, insightful summary of the progress made.
   Additionally, identify if any significant milestones, insights, or breakthroughs (Timeline Entries) occurred, 
-  or if any specific tasks or exercises (Homework) were suggested.
+  or if any specific tasks or exercises (Homework) were explicitly discussed and agreed during this session.
   
   ${ctaInstruction}
 
@@ -338,16 +338,23 @@ export async function generateSummary(
       { "title": "...", "description": "...", "type": "milestone" | "insight" | "breakthrough" }
     ],
     "homework": [
-      { "title": "...", "description": "...", "dueDate": "ISO Date String (optional)" }
+      { "title": "...", "description": "...", "dueDate": "ISO Date String (optional)", "evidence": "A short exact quote or near-literal phrase from this session showing the homework was explicitly discussed" }
     ]
   }
   
   Focus on:
   1. Main communication challenges identified (e.g., specific 'Four Horsemen' behaviors).
   2. Positive progress or 'micro-wins' (e.g., successful softened startups, successful mirroring).
-  3. Actionable homework or next steps suggested (e.g., 'The Daily 6-Second Kiss', 'Weekly State of the Union').
+  3. Only homework that was explicitly discussed in this session as a real assignment, exercise, or agreed next step.
   4. Deeper insights into attachment styles or underlying emotional needs.
   Keep it structured, encouraging, and deeply professional.
+  CRITICAL HOMEWORK RULES:
+  - Do NOT invent homework.
+  - Do NOT infer homework from general themes or coach style.
+  - Do NOT convert generic advice into homework.
+  - Only include a homework item if the conversation explicitly discussed a concrete exercise, task, ritual, or next step to do after the session.
+  - Every homework item MUST include an "evidence" field quoting the exact or near-literal wording from this session that proves it was discussed.
+  - If no homework was explicitly discussed, return an empty homework array: [].
   IMPORTANT: All text fields in the JSON response (summary, title, description) MUST be in the following language: ${language === 'nl' ? 'Dutch (Nederlands)' : 'English'}.`;
 
   const summaryModel = genAI.getGenerativeModel({
