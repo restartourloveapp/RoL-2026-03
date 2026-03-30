@@ -94,6 +94,7 @@ export const translations = {
         freeLimitSessions: "Je hebt het maximum van 3 gratis sessies bereikt. Upgrade naar Premium voor onbeperkte sessies.",
         verificationSent: "Verificatie e-mail verzonden!",
         emailNotVerified: "E-mail is nog niet geverifieerd. Controleer je inbox.",
+        partnerAccountNotReady: "Partneraccount wordt nog gesynchroniseerd. Probeer het opnieuw.",
         pinMismatch: "De bevestiging van je pincode komt niet overeen.",
         pinConfirmRequired: "Bevestig je pincode om door te gaan."
       }
@@ -384,6 +385,7 @@ export const translations = {
         freeLimitSessions: "You have reached the maximum of 3 free sessions. Upgrade to Premium for unlimited sessions.",
         verificationSent: "Verification email sent!",
         emailNotVerified: "Email is not verified yet. Please check your inbox.",
+        partnerAccountNotReady: "Partner account is still syncing. Please try again.",
         pinMismatch: "PIN confirmation does not match.",
         pinConfirmRequired: "Please confirm your PIN to continue."
       }

@@ -591,8 +591,12 @@ async function startServer() {
         pinSalt,        // Copy PIN from main account (now verified)
         pinVerifier,
         wrappedCK: mainAccountData.wrappedCK,
+        exchangePublicKey: mainAccountData.exchangePublicKey || null,
+        wrappedExchangePrivateKey: mainAccountData.wrappedExchangePrivateKey || null,
+        wrappedRK: mainAccountData.wrappedRK || null,
         subscriptionTier: 'partner',
         language: mainAccountData.language || 'nl',
+        defaultCoupleCoach: mainAccountData.defaultCoupleCoach || null,
         profileId: partnerProfileId,
         partnerId: mainProfileId,
         profileName: mainAccountData.partnerName || null,

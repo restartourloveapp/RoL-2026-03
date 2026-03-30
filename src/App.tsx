@@ -1262,9 +1262,19 @@ function MainApp() {
   };
 
   const handleVerifyPin = async () => {
-    if (!profile || pin.length < 4) return;
+    if (!profile || pin.length < 6) return;
 
     try {
+      setAuthError(null);
+
+      if (!profile.pinSalt || !profile.pinVerifier || !profile.wrappedCK) {
+        throw new Error(t('auth.alerts.partnerAccountNotReady'));
+      }
+
+      if (!profile.wrappedExchangePrivateKey) {
+        throw new Error(t('auth.alerts.partnerAccountNotReady'));
+      }
+
       const salt = Encryption.b64Decode(profile.pinSalt);
       const derivedKek = await Encryption.deriveKEK(pin, salt);
       const pinHash = await Encryption.hashPIN(pin, salt);
@@ -1293,7 +1303,9 @@ function MainApp() {
       setExchangeKey(unwrappedExchangeKey);
       setIsPinVerified(true);
     } catch (e) {
-      showToast(t('auth.alerts.incorrectPin'), 'error');
+      const message = e instanceof Error ? e.message : t('auth.alerts.incorrectPin');
+      setAuthError(message);
+      showToast(message, 'error');
     }
   };
 
@@ -2653,7 +2665,10 @@ function MainApp() {
                 type="text"
                 inputMode="numeric"
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                onChange={(e) => {
+                  setPin(e.target.value.replace(/\D/g, '').slice(0, 10));
+                  setAuthError(null);
+                }}
                 placeholder="••••••"
                 className="w-full text-center text-4xl tracking-widest py-4 bg-stone-50 border-2 border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none transition-colors"
                 style={{ WebkitTextSecurity: 'disc' } as any}
@@ -2663,7 +2678,10 @@ function MainApp() {
                   type="text"
                   inputMode="numeric"
                   value={pinConfirm}
-                  onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  onChange={(e) => {
+                    setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 10));
+                    setAuthError(null);
+                  }}
                   placeholder="••••••"
                   className="w-full mt-3 text-center text-3xl tracking-widest py-3 bg-stone-50 border-2 border-stone-100 rounded-2xl focus:border-emerald-500 focus:outline-none transition-colors"
                   style={{ WebkitTextSecurity: 'disc' } as any}
@@ -2688,6 +2706,11 @@ function MainApp() {
                 )}>
                   {pin === pinConfirm ? t('auth.pinMatch') : t('auth.pinNoMatch')}
                 </p>
+              )}
+              {authError && (
+                <div className="mt-3 text-red-500 text-sm bg-red-50 p-3 rounded-xl border border-red-100">
+                  {authError}
+                </div>
               )}
             </div>
             <button 
