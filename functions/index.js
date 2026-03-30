@@ -2,6 +2,7 @@ const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 
 admin.initializeApp();
 
@@ -185,5 +186,55 @@ exports.getLinkedAccountSummary = onCall({
     linkedDisplayName: linked.displayName || "",
     linkedEmail: linked.email || "",
     relation: isPartner ? "main-account" : "partner-account",
+  };
+});
+
+exports.generatePartnerConnectionCode = onCall({
+  region: "europe-west1",
+}, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const db = admin.firestore();
+  const userSnap = await db.collection("users").doc(uid).get();
+  if (!userSnap.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  const userData = userSnap.data() || {};
+  const tier = userData.subscriptionTier || "free";
+  if (tier !== "paid") {
+    throw new HttpsError("permission-denied", "Main account must be premium to create partner accounts");
+  }
+
+  const code = crypto.randomBytes(3).toString("hex").toUpperCase().substring(0, 6);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+  await db.collection("partnerConnectionCodes").add({
+    mainAccountUid: uid,
+    code,
+    expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    used: false,
+    partnerAccountUid: null,
+  });
+
+  await db.collection("auditLogs").add({
+    userId: uid,
+    action: "partner_connection_code_generated",
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    details: {
+      code,
+      expiresAt,
+      via: "callable",
+    },
+  });
+
+  return {
+    success: true,
+    code,
+    expiresAt: expiresAt.toISOString(),
   };
 });

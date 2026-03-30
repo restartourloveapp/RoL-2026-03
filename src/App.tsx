@@ -1412,28 +1412,12 @@ function MainApp() {
 
     setIsGeneratingCode(true);
     try {
-      const response = await fetch('/api/generate-partner-connection-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mainAccountUid: user.uid
-        })
-      });
+      const fns = getFunctions(app, 'europe-west1');
+      const callGenerate = httpsCallable(fns, 'generatePartnerConnectionCode');
+      const result = await callGenerate({});
+      const data = (result.data || {}) as { code?: string; expiresAt?: string };
 
-      const rawResponse = await response.text();
-      let data: any = {};
-      try {
-        data = rawResponse ? JSON.parse(rawResponse) : {};
-      } catch {
-        throw new Error(t('settings.serverUnavailable'));
-      }
-
-      if (!response.ok) {
-        showToast(data?.error || t('settings.generateCodeFailed'), 'error');
-        return;
-      }
-
-      if (!data?.code || !data?.expiresAt) {
+      if (!data.code || !data.expiresAt) {
         showToast(t('settings.invalidServerResponse'), 'error');
         return;
       }
@@ -1443,7 +1427,7 @@ function MainApp() {
       showToast(t('settings.connectionCodeGenerated'), 'success');
     } catch (error) {
       console.error('Error generating connection code:', error);
-      showToast(error instanceof Error ? error.message : t('settings.generateCodeFailed'), 'error');
+      showToast(t('settings.generateCodeFailed'), 'error');
     } finally {
       setIsGeneratingCode(false);
     }
