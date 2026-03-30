@@ -1267,23 +1267,67 @@ function MainApp() {
     try {
       setAuthError(null);
 
+      console.log('🔓 PIN unlock attempt:', { uid: profile.uid, pinLength: pin.length });
+
       if (!profile.pinSalt || !profile.pinVerifier || !profile.wrappedCK) {
         throw new Error(t('auth.alerts.partnerAccountNotReady'));
       }
 
-      const salt = Encryption.b64Decode(profile.pinSalt);
-      const derivedKek = await Encryption.deriveKEK(pin, salt);
-      const pinHash = await Encryption.hashPIN(pin, salt);
-
-      if (pinHash !== profile.pinVerifier) {
-        throw new Error("Incorrect PIN");
+      // Step 1: Decode salt
+      let salt: Uint8Array;
+      try {
+        salt = Encryption.b64Decode(profile.pinSalt);
+        console.log('✅ Salt decoded');
+      } catch (saltError) {
+        console.error('❌ Failed to decode salt:', saltError);
+        throw new Error(`Failed to decode salt: ${saltError instanceof Error ? saltError.message : 'Unknown error'}`);
       }
 
-      const unwrappedCk = await Encryption.unwrapKey(
-        { ciphertext: profile.wrappedCK.ciphertext, iv: profile.wrappedCK.iv },
-        derivedKek
-      );
+      // Step 2: Derive KEK
+      let derivedKek: CryptoKey;
+      try {
+        derivedKek = await Encryption.deriveKEK(pin, salt);
+        console.log('✅ KEK derived');
+      } catch (kekError) {
+        console.error('❌ Failed to derive KEK:', kekError);
+        throw new Error(`Failed to derive KEK: ${kekError instanceof Error ? kekError.message : 'Unknown error'}`);
+      }
 
+      // Step 3: Hash PIN and verify
+      let pinHash: string;
+      try {
+        pinHash = await Encryption.hashPIN(pin, salt);
+        console.log('✅ PIN hashed');
+      } catch (hashError) {
+        console.error('❌ Failed to hash PIN:', hashError);
+        throw new Error(`Failed to hash PIN: ${hashError instanceof Error ? hashError.message : 'Unknown error'}`);
+      }
+
+      if (pinHash !== profile.pinVerifier) {
+        console.error('❌ PIN hash mismatch');
+        throw new Error("Incorrect PIN");
+      }
+      console.log('✅ PIN verified');
+
+      // Step 4: Unwrap CK
+      let unwrappedCk: CryptoKey;
+      try {
+        console.log('🔄 Attempting to unwrap CK:', { 
+          ciphertextType: typeof profile.wrappedCK.ciphertext,
+          ivType: typeof profile.wrappedCK.iv,
+          ciphertextLength: profile.wrappedCK.ciphertext?.length
+        });
+        unwrappedCk = await Encryption.unwrapKey(
+          { ciphertext: profile.wrappedCK.ciphertext, iv: profile.wrappedCK.iv },
+          derivedKek
+        );
+        console.log('✅ CK unwrapped');
+      } catch (ckError) {
+        console.error('❌ Failed to unwrap CK:', ckError);
+        throw new Error(`Failed to unwrap content key: ${ckError instanceof Error ? ckError.message : 'Unknown error'}`);
+      }
+
+      // Step 5: Exchange key (optional)
       let unwrappedExchangeKey: CryptoKey | null = null;
       if (profile.wrappedExchangePrivateKey) {
         try {
@@ -1291,22 +1335,31 @@ function MainApp() {
             profile.wrappedExchangePrivateKey,
             derivedKek
           );
+          console.log('✅ Exchange key restored');
         } catch (exchangeError) {
-          console.warn('Failed to restore exchange key during PIN unlock', exchangeError);
+          console.warn('⚠️ Failed to restore exchange key during PIN unlock', exchangeError);
         }
       }
 
+      // Step 6: RK (optional)
       if (profile.wrappedRK) {
-        const unwrappedRk = await Encryption.unwrapKey(profile.wrappedRK, derivedKek);
-        setRk(unwrappedRk);
+        try {
+          const unwrappedRk = await Encryption.unwrapKey(profile.wrappedRK, derivedKek);
+          setRk(unwrappedRk);
+          console.log('✅ RK restored');
+        } catch (rkError) {
+          console.warn('⚠️ Failed to restore RK:', rkError);
+        }
       }
 
       setKek(derivedKek);
       setCk(unwrappedCk);
       setExchangeKey(unwrappedExchangeKey);
       setIsPinVerified(true);
+      console.log('🎉 PIN unlock complete');
     } catch (e) {
       const message = e instanceof Error ? e.message : t('auth.alerts.incorrectPin');
+      console.error('💥 PIN unlock failed:', message);
       setAuthError(message);
       showToast(message, 'error');
     }
