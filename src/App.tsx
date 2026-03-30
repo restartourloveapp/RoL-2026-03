@@ -439,17 +439,17 @@ function MainApp() {
       : (decryptedProfile?.partnerName || t('chat.partner')))
     : (decryptedProfile?.partnerName || t('chat.partner'));
 
-  const currentCoupleName = activeSession?.type === 'couple'
-    ? (isPartnerAccount
-      ? (decryptedProfile?.partnerName || t('chat.you'))
-      : (decryptedProfile?.name || t('chat.you')))
+  const currentCoupleName = currentCoupleProfileId
+    ? (currentCoupleProfileId === activeSession?.ownerProfileId
+      ? canonicalOwnerCoupleName
+      : currentCoupleProfileId === activeSession?.partnerProfileId
+        ? canonicalPartnerCoupleName
+        : t('chat.you'))
     : t('chat.you');
 
-  const otherCoupleName = activeSession?.type === 'couple'
-    ? (isPartnerAccount
-      ? (decryptedProfile?.name || t('chat.partner'))
-      : (decryptedProfile?.partnerName || t('chat.partner')))
-    : t('chat.partner');
+  const otherCoupleName = currentCoupleProfileId === activeSession?.ownerProfileId
+    ? canonicalPartnerCoupleName
+    : canonicalOwnerCoupleName;
 
   const expectedResponderName = expectedResponderProfileId
     ? (expectedResponderProfileId === activeSession?.ownerProfileId
@@ -460,7 +460,7 @@ function MainApp() {
     : null;
 
   const partnerDeviceMessagePlaceholder = activeSession?.type === 'couple' && !isSharedDeviceMode
-    ? (expectedResponderProfileId && expectedResponderProfileId !== currentCoupleProfileId
+    ? (expectedResponderProfileId && expectedResponderName
       ? (language === 'nl'
         ? `Wachten op antwoord van '${expectedResponderName}'`
         : `Waiting for a response from '${expectedResponderName}'`)
