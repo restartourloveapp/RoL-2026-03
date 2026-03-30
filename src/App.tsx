@@ -457,15 +457,31 @@ function MainApp() {
     session?: ChatSession | null
   ) => {
     if (!session || session.type !== 'couple') return null;
-    if (nextSpeaker === 'user') return session.ownerProfileId || null;
-    if (nextSpeaker === 'partner') return session.partnerProfileId || null;
+    const ownerId = session.ownerProfileId || null;
+    const partnerId = session.partnerProfileId || null;
+    const currentProfileId = profile?.profileId || null;
+
+    const otherProfileId = currentProfileId === ownerId
+      ? partnerId
+      : currentProfileId === partnerId
+        ? ownerId
+        : null;
+
+    if (nextSpeaker === 'user') {
+      return currentProfileId || ownerId;
+    }
+
+    if (nextSpeaker === 'partner') {
+      return otherProfileId || partnerId || ownerId;
+    }
+
     return null;
   };
 
   const currentCoupleProfileId = activeSession?.type === 'couple'
-    ? (isPartnerAccount
-      ? (activeSession.partnerProfileId || profile?.profileId || null)
-      : (activeSession.ownerProfileId || profile?.profileId || null))
+    ? (profile?.profileId ||
+      (isPartnerAccount ? activeSession.partnerProfileId : activeSession.ownerProfileId) ||
+      null)
     : (profile?.profileId || null);
 
   const canonicalOwnerCoupleName = activeSession?.type === 'couple'
@@ -2191,12 +2207,8 @@ function MainApp() {
         if (isSharedDeviceMode) {
           senderProfileId = selectedSpeakerUid || profile?.profileId;
         } else {
-          const isPartnerDevice = profile?.accountType === 'partner' && !!profile?.mainAccountUid;
-          if (isPartnerDevice) {
-            senderProfileId = activeSession.partnerProfileId || profile?.profileId;
-          } else {
-            senderProfileId = activeSession.ownerProfileId || profile?.profileId;
-          }
+          // In partner-device mode, the person behind the keyboard is the signed-in profile.
+          senderProfileId = profile?.profileId || activeSession.ownerProfileId || activeSession.partnerProfileId;
         }
       }
 
