@@ -18,6 +18,13 @@ service cloud.firestore {
       return isAuth() && getAuth() == uid;
     }
 
+    function isLinkedPartnerCreateForMain(ownerUid, partnerUid) {
+      return isAuth() &&
+             partnerUid == getAuth() &&
+             ownerUid is string &&
+             get(/databases/$(database)/documents/users/$(getAuth())).data.get('mainAccountUid', '') == ownerUid;
+    }
+
     function isAdmin() {
       return isAuth() && get(/databases/$(database)/documents/users/$(getAuth())).data.get('role', 'user') == 'admin';
     }
@@ -113,7 +120,16 @@ service cloud.firestore {
                   );
       
       allow create: if isAuth() && 
-                      getAuth() == request.resource.data.ownerUid &&
+                      (
+                        getAuth() == request.resource.data.ownerUid ||
+                        (
+                          request.resource.data.type == 'couple' &&
+                          isLinkedPartnerCreateForMain(
+                            request.resource.data.ownerUid,
+                            request.resource.data.get('partnerUid', '')
+                          )
+                        )
+                      ) &&
                       request.resource.data.type in ['personal', 'couple'] &&
                       request.resource.data.status in ['active', 'archived', 'closed', 'summary_pending', 'beeindigd'] &&
                       isTimestamp(request.resource.data.createdAt);
