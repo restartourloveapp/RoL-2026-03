@@ -779,8 +779,22 @@ function MainApp() {
 
         try {
           const isOwner = s.ownerUid === user?.uid;
-          const wrappedData = isOwner ? s.wrappedSSK : s.partnerWrappedSSK;
-          const wrappingKey = isOwner ? ck : rk;
+          
+          // Determine which SSK and wrapping key to use
+          let wrappedData, wrappingKey;
+          if (isOwner) {
+            // Owner: use their CK to unwrap their SSK
+            wrappedData = s.wrappedSSK;
+            wrappingKey = ck;
+          } else if (isPartnerAccount) {
+            // Partner device: use their CK to unwrap partnerWrappedSSK
+            wrappedData = s.partnerWrappedSSK;
+            wrappingKey = ck;
+          } else {
+            // Main account accessing partner's personal content: use RK
+            wrappedData = s.partnerWrappedSSK;
+            wrappingKey = rk;
+          }
 
           if (wrappedData && wrappingKey) {
             const ssk = await Encryption.unwrapKey(wrappedData, wrappingKey);
@@ -889,8 +903,21 @@ function MainApp() {
       try {
         // Determine which wrapped SSK and wrapping key to use
         const isOwner = activeSession.ownerUid === user?.uid;
-        const wrappedData = isOwner ? activeSession.wrappedSSK : activeSession.partnerWrappedSSK;
-        const wrappingKey = isOwner ? ck : rk;
+        
+        let wrappedData, wrappingKey;
+        if (isOwner) {
+          // Owner: use their CK to unwrap their SSK
+          wrappedData = activeSession.wrappedSSK;
+          wrappingKey = ck;
+        } else if (isPartnerAccount) {
+          // Partner device: use their CK to unwrap partnerWrappedSSK
+          wrappedData = activeSession.partnerWrappedSSK;
+          wrappingKey = ck;
+        } else {
+          // Main account accessing partner's personal content: use RK
+          wrappedData = activeSession.partnerWrappedSSK;
+          wrappingKey = rk;
+        }
 
         if (!wrappedData) throw new Error("No wrapped SSK found for user");
         if (!wrappingKey) throw new Error("No wrapping key available");
