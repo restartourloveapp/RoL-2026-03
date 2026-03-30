@@ -421,6 +421,44 @@ function MainApp() {
     return null;
   };
 
+  const unwrapSessionKeyForCurrentUser = async (
+    session: Pick<ChatSession, 'id' | 'ownerUid' | 'wrappedSSK' | 'partnerWrappedSSK'>
+  ): Promise<CryptoKey> => {
+    const isOwner = session.ownerUid === user?.uid;
+    const attempts: Array<{
+      wrapped?: { ciphertext: string; iv: string } | null;
+      key: CryptoKey | null;
+      label: string;
+    }> = [];
+
+    if (isOwner) {
+      attempts.push({ wrapped: session.wrappedSSK, key: ck, label: 'owner-ck' });
+    } else if (isPartnerAccount) {
+      attempts.push({ wrapped: session.partnerWrappedSSK, key: ck, label: 'partner-ck' });
+      attempts.push({ wrapped: session.wrappedSSK, key: ck, label: 'partner-owner-ck-fallback' });
+    } else {
+      attempts.push({ wrapped: session.partnerWrappedSSK, key: rk, label: 'main-rk' });
+      attempts.push({ wrapped: session.partnerWrappedSSK, key: ck, label: 'main-ck-fallback' });
+      attempts.push({ wrapped: session.wrappedSSK, key: ck, label: 'main-owner-ck-fallback' });
+    }
+
+    let lastError: unknown = null;
+
+    for (const attempt of attempts) {
+      if (!attempt.wrapped || !attempt.key) {
+        continue;
+      }
+
+      try {
+        return await Encryption.unwrapKey(attempt.wrapped, attempt.key);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error(`No wrapped SSK found for session ${session.id}`);
+  };
+
   const currentCoupleProfileId = activeSession?.type === 'couple'
     ? (isPartnerAccount
       ? (activeSession.partnerProfileId || profile?.profileId || null)
@@ -778,29 +816,9 @@ function MainApp() {
         if (newKeys[s.id]) continue;
 
         try {
-          const isOwner = s.ownerUid === user?.uid;
-          
-          // Determine which SSK and wrapping key to use
-          let wrappedData, wrappingKey;
-          if (isOwner) {
-            // Owner: use their CK to unwrap their SSK
-            wrappedData = s.wrappedSSK;
-            wrappingKey = ck;
-          } else if (isPartnerAccount) {
-            // Partner device: use their CK to unwrap partnerWrappedSSK
-            wrappedData = s.partnerWrappedSSK;
-            wrappingKey = ck;
-          } else {
-            // Main account accessing partner's personal content: use RK
-            wrappedData = s.partnerWrappedSSK;
-            wrappingKey = rk;
-          }
-
-          if (wrappedData && wrappingKey) {
-            const ssk = await Encryption.unwrapKey(wrappedData, wrappingKey);
-            newKeys[s.id] = ssk;
-            changed = true;
-          }
+          const ssk = await unwrapSessionKeyForCurrentUser(s);
+          newKeys[s.id] = ssk;
+          changed = true;
         } catch (e) {
           console.error(`Failed to unwrap SSK for session ${s.id}`, e);
         }
@@ -901,28 +919,7 @@ function MainApp() {
 
     const loadSessionKey = async () => {
       try {
-        // Determine which wrapped SSK and wrapping key to use
-        const isOwner = activeSession.ownerUid === user?.uid;
-        
-        let wrappedData, wrappingKey;
-        if (isOwner) {
-          // Owner: use their CK to unwrap their SSK
-          wrappedData = activeSession.wrappedSSK;
-          wrappingKey = ck;
-        } else if (isPartnerAccount) {
-          // Partner device: use their CK to unwrap partnerWrappedSSK
-          wrappedData = activeSession.partnerWrappedSSK;
-          wrappingKey = ck;
-        } else {
-          // Main account accessing partner's personal content: use RK
-          wrappedData = activeSession.partnerWrappedSSK;
-          wrappingKey = rk;
-        }
-
-        if (!wrappedData) throw new Error("No wrapped SSK found for user");
-        if (!wrappingKey) throw new Error("No wrapping key available");
-
-        const ssk = await Encryption.unwrapKey(wrappedData, wrappingKey);
+        const ssk = await unwrapSessionKeyForCurrentUser(activeSession);
         setActiveSSK(ssk);
       } catch (e) {
         console.error("Failed to unwrap SSK", e);
@@ -1578,8 +1575,11 @@ function MainApp() {
     const wrappedSSK = await Encryption.wrapKey(ssk, ck);
     let partnerWrappedSSK = null;
 
-    if (newSessionConfig.type === 'couple' && rk) {
-      partnerWrappedSSK = await Encryption.wrapKey(ssk, rk);
+    if (newSessionConfig.type === 'couple') {
+      const partnerWrappingKey = rk || ck;
+      if (partnerWrappingKey) {
+        partnerWrappedSSK = await Encryption.wrapKey(ssk, partnerWrappingKey);
+      }
     }
 
     // Determine owner profile ID
@@ -1913,9 +1913,13 @@ function MainApp() {
             const data = d.data();
             if (data.summary) {
               try {
-                const wrappedSSK = data.ownerUid === user!.uid ? data.wrappedSSK : data.partnerWrappedSSK;
-                if (wrappedSSK && ck) {
-                  const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
+                if (ck) {
+                  const ssk = await unwrapSessionKeyForCurrentUser({
+                    id: d.id,
+                    ownerUid: data.ownerUid,
+                    wrappedSSK: data.wrappedSSK,
+                    partnerWrappedSSK: data.partnerWrappedSSK,
+                  });
                   const dec = await Encryption.decryptText({ ciphertext: data.summary.ciphertext, iv: data.summary.iv }, ssk);
                   summariesToMeta.push(dec);
                 }
@@ -2206,17 +2210,17 @@ function MainApp() {
         }
 
         try {
-          const wrappedSSK = data.ownerUid === user!.uid ? data.wrappedSSK : data.partnerWrappedSSK;
-          if (!wrappedSSK) {
-            console.warn(`[Context] No wrapped SSK found for session ${sessionId.slice(0, 6)}...`);
-            continue;
-          }
           if (!ck) {
             console.warn(`[Context] No client key available for decryption`);
             continue;
           }
 
-          const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
+          const ssk = await unwrapSessionKeyForCurrentUser({
+            id: sessionId,
+            ownerUid: data.ownerUid,
+            wrappedSSK: data.wrappedSSK,
+            partnerWrappedSSK: data.partnerWrappedSSK,
+          });
           const dec = await Encryption.decryptText(
             { ciphertext: data.summary.ciphertext, iv: data.summary.iv },
             ssk
@@ -2280,16 +2284,17 @@ function MainApp() {
                 continue;
               }
               
-              const wrappedSSK = sessionData.ownerUid === user!.uid
-                ? sessionData.wrappedSSK
-                : sessionData.partnerWrappedSSK;
-              
-              if (!wrappedSSK || !ck) {
+              if (!ck) {
                 console.warn(`[Context] Cannot decrypt shared personal session ${sharedSessionId.slice(0, 6)}...`);
                 continue;
               }
-              
-              const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
+
+              const ssk = await unwrapSessionKeyForCurrentUser({
+                id: sharedSessionId,
+                ownerUid: sessionData.ownerUid,
+                wrappedSSK: sessionData.wrappedSSK,
+                partnerWrappedSSK: sessionData.partnerWrappedSSK,
+              });
               const dec = await Encryption.decryptText(
                 { ciphertext: sessionData.summary.ciphertext, iv: sessionData.summary.iv },
                 ssk
@@ -2362,18 +2367,17 @@ function MainApp() {
             }
             
             const hwSessionData = hwSessionDoc.data();
-            const wrappedSSK = hwSessionData.ownerUid === user!.uid ? hwSessionData.wrappedSSK : hwSessionData.partnerWrappedSSK;
-            
-            if (!wrappedSSK) {
-              console.warn(`[Context] No wrapped SSK for homework in session ${data.sessionId.slice(0, 6)}...`);
-              continue;
-            }
             if (!ck) {
               console.warn(`[Context] No client key available for homework decryption`);
               continue;
             }
-            
-            const ssk = await Encryption.unwrapKey(wrappedSSK, ck);
+
+            const ssk = await unwrapSessionKeyForCurrentUser({
+              id: data.sessionId,
+              ownerUid: hwSessionData.ownerUid,
+              wrappedSSK: hwSessionData.wrappedSSK,
+              partnerWrappedSSK: hwSessionData.partnerWrappedSSK,
+            });
             const title = await Encryption.decryptText({ ciphertext: data.title, iv: data.titleIv }, ssk);
             const desc = await Encryption.decryptText({ ciphertext: data.description, iv: data.descriptionIv }, ssk);
             
