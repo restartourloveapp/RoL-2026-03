@@ -779,25 +779,36 @@ function MainApp() {
 
         try {
           const isOwner = s.ownerUid === user?.uid;
-          
-          // Determine which SSK and wrapping key to use
-          let wrappedData, wrappingKey;
-          if (isOwner) {
-            // Owner: use their CK to unwrap their SSK
-            wrappedData = s.wrappedSSK;
-            wrappingKey = ck;
-          } else if (isPartnerAccount) {
-            // Partner device: use their CK to unwrap partnerWrappedSSK
-            wrappedData = s.partnerWrappedSSK;
-            wrappingKey = ck;
-          } else {
-            // Main account accessing partner's personal content: use RK
-            wrappedData = s.partnerWrappedSSK;
-            wrappingKey = rk;
+
+          if (isOwner && ck && s.wrappedSSK) {
+            const ssk = await Encryption.unwrapKey(s.wrappedSSK, ck);
+            newKeys[s.id] = ssk;
+            changed = true;
+            continue;
           }
 
-          if (wrappedData && wrappingKey) {
-            const ssk = await Encryption.unwrapKey(wrappedData, wrappingKey);
+          if (isPartnerAccount && ck) {
+            try {
+              const partnerWrapped = s.partnerWrappedSSK || s.wrappedSSK;
+              if (!partnerWrapped) throw new Error('No wrapped SSK found for partner device');
+
+              const ssk = await Encryption.unwrapKey(partnerWrapped, ck);
+              newKeys[s.id] = ssk;
+              changed = true;
+              continue;
+            } catch (partnerError) {
+              if (s.wrappedSSK) {
+                const fallbackSsk = await Encryption.unwrapKey(s.wrappedSSK, ck);
+                newKeys[s.id] = fallbackSsk;
+                changed = true;
+                continue;
+              }
+              throw partnerError;
+            }
+          }
+
+          if (s.partnerWrappedSSK && rk) {
+            const ssk = await Encryption.unwrapKey(s.partnerWrappedSSK, rk);
             newKeys[s.id] = ssk;
             changed = true;
           }
@@ -901,28 +912,38 @@ function MainApp() {
 
     const loadSessionKey = async () => {
       try {
-        // Determine which wrapped SSK and wrapping key to use
         const isOwner = activeSession.ownerUid === user?.uid;
-        
-        let wrappedData, wrappingKey;
+
         if (isOwner) {
-          // Owner: use their CK to unwrap their SSK
-          wrappedData = activeSession.wrappedSSK;
-          wrappingKey = ck;
-        } else if (isPartnerAccount) {
-          // Partner device: use their CK to unwrap partnerWrappedSSK
-          wrappedData = activeSession.partnerWrappedSSK;
-          wrappingKey = ck;
-        } else {
-          // Main account accessing partner's personal content: use RK
-          wrappedData = activeSession.partnerWrappedSSK;
-          wrappingKey = rk;
+          if (!activeSession.wrappedSSK || !ck) throw new Error("No wrapped SSK found for owner");
+          const ssk = await Encryption.unwrapKey(activeSession.wrappedSSK, ck);
+          setActiveSSK(ssk);
+          return;
         }
 
-        if (!wrappedData) throw new Error("No wrapped SSK found for user");
-        if (!wrappingKey) throw new Error("No wrapping key available");
+        if (isPartnerAccount) {
+          if (!ck) throw new Error("No wrapping key available");
 
-        const ssk = await Encryption.unwrapKey(wrappedData, wrappingKey);
+          try {
+            const partnerWrapped = activeSession.partnerWrappedSSK || activeSession.wrappedSSK;
+            if (!partnerWrapped) throw new Error("No wrapped SSK found for partner device");
+
+            const ssk = await Encryption.unwrapKey(partnerWrapped, ck);
+            setActiveSSK(ssk);
+            return;
+          } catch (partnerError) {
+            if (activeSession.wrappedSSK) {
+              const fallbackSsk = await Encryption.unwrapKey(activeSession.wrappedSSK, ck);
+              setActiveSSK(fallbackSsk);
+              return;
+            }
+            throw partnerError;
+          }
+        }
+
+        if (!activeSession.partnerWrappedSSK || !rk) throw new Error("No wrapped SSK found for user");
+
+        const ssk = await Encryption.unwrapKey(activeSession.partnerWrappedSSK, rk);
         setActiveSSK(ssk);
       } catch (e) {
         console.error("Failed to unwrap SSK", e);
