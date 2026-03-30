@@ -1372,8 +1372,17 @@ function MainApp() {
       setIsPinVerified(true);
       console.log('🎉 PIN unlock complete');
     } catch (e) {
-      const message = e instanceof Error ? e.message : t('auth.alerts.incorrectPin');
-      console.error('💥 PIN unlock failed:', message);
+      const message = e instanceof Error ? e.message : (
+        typeof e === 'object' && e !== null && 'message' in e 
+          ? String((e as any).message)
+          : t('auth.alerts.incorrectPin')
+      );
+      console.error('💥 PIN unlock failed:', { 
+        error: e,
+        errorMessage: message,
+        errorType: e instanceof Error ? Error.name : typeof e,
+        errorKeys: typeof e === 'object' && e !== null ? Object.keys(e) : 'N/A'
+      });
       setAuthError(message);
       showToast(message, 'error');
     }
