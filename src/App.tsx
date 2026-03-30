@@ -457,8 +457,18 @@ function MainApp() {
     session?: ChatSession | null
   ) => {
     if (!session || session.type !== 'couple') return null;
-    if (nextSpeaker === 'user') return session.ownerProfileId || null;
-    if (nextSpeaker === 'partner') return session.partnerProfileId || null;
+    const deviceProfileId = !isSharedDeviceMode
+      ? (isPartnerAccount
+        ? (session.partnerProfileId || null)
+        : (session.ownerProfileId || null))
+      : (profile?.profileId || session.ownerProfileId || null);
+
+    const otherProfileId = deviceProfileId === session.ownerProfileId
+      ? (session.partnerProfileId || null)
+      : (session.ownerProfileId || null);
+
+    if (nextSpeaker === 'user') return deviceProfileId;
+    if (nextSpeaker === 'partner') return otherProfileId;
 
     return null;
   };
