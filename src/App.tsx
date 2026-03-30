@@ -464,9 +464,17 @@ function MainApp() {
   };
 
   const currentCoupleProfileId = activeSession?.type === 'couple'
-    ? (profile?.profileId ||
-      (isPartnerAccount ? activeSession.partnerProfileId : activeSession.ownerProfileId) ||
-      null)
+    ? (
+        // In linked partner-device mode, role is canonical and must not depend
+        // on potentially stale profile.profileId values.
+        !isSharedDeviceMode
+          ? (
+              isPartnerAccount
+                ? (activeSession.partnerProfileId || profile?.profileId || null)
+                : (activeSession.ownerProfileId || profile?.profileId || null)
+            )
+          : (profile?.profileId || activeSession.ownerProfileId || null)
+      )
     : (profile?.profileId || null);
 
   const canonicalOwnerCoupleName = activeSession?.type === 'couple'
