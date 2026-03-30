@@ -1578,8 +1578,11 @@ function MainApp() {
     const wrappedSSK = await Encryption.wrapKey(ssk, ck);
     let partnerWrappedSSK = null;
 
-    if (newSessionConfig.type === 'couple' && rk) {
-      partnerWrappedSSK = await Encryption.wrapKey(ssk, rk);
+    if (newSessionConfig.type === 'couple') {
+      // Partner devices inherit the main account CK, not the RK.
+      // Couple sessions therefore need a partner copy wrapped with CK so the
+      // linked partner device can decrypt and send messages.
+      partnerWrappedSSK = await Encryption.wrapKey(ssk, ck);
     }
 
     // Determine owner profile ID
