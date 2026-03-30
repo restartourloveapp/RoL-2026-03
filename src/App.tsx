@@ -401,6 +401,43 @@ function MainApp() {
   const [selectedSpeakerUid, setSelectedSpeakerUid] = useState<string | null>(null);
   const [expectedResponderProfileId, setExpectedResponderProfileId] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [sessionHomework, setSessionHomework] = useState<Array<{ title: string; description: string; dueDate?: string }>>([]);
+  const [autoOpenedSummarySessionId, setAutoOpenedSummarySessionId] = useState<string | null>(null);
+
+  const loadSessionSummaryPayload = async (session: ChatSession, sessionKey: CryptoKey) => {
+    let decryptedSummary: string | null = null;
+
+    if (session.summary?.ciphertext && session.summary?.iv) {
+      decryptedSummary = await Encryption.decryptText(session.summary, sessionKey);
+    }
+
+    const homeworkQuery = query(collection(db, 'homework'), where('sessionId', '==', session.id));
+    const homeworkSnap = await getDocs(homeworkQuery);
+    const decryptedHomework = await Promise.all(homeworkSnap.docs.map(async (homeworkDoc) => {
+      const homeworkData = homeworkDoc.data();
+      const title = await Encryption.decryptText({
+        ciphertext: homeworkData.title,
+        iv: homeworkData.titleIv,
+      }, sessionKey);
+      const description = await Encryption.decryptText({
+        ciphertext: homeworkData.description,
+        iv: homeworkData.descriptionIv,
+      }, sessionKey);
+
+      return {
+        title,
+        description,
+        dueDate: homeworkData.dueDate?.toDate?.()?.toISOString?.() || undefined,
+      };
+    }));
+
+    return {
+      decryptedSummary,
+      decryptedHomework,
+    };
+  };
 
   useEffect(() => {
     if (activeSession && user && profile && !selectedSpeakerUid) {
@@ -1828,45 +1865,8 @@ function MainApp() {
     }
   };
 
-  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [sessionHomework, setSessionHomework] = useState<Array<{ title: string; description: string; dueDate?: string }>>([]);
   const [responseTip, setResponseTip] = useState<string | null>(null);
   const [isTipLoading, setIsTipLoading] = useState(false);
-  const [autoOpenedSummarySessionId, setAutoOpenedSummarySessionId] = useState<string | null>(null);
-
-  const loadSessionSummaryPayload = async (session: ChatSession, sessionKey: CryptoKey) => {
-    let decryptedSummary: string | null = null;
-
-    if (session.summary?.ciphertext && session.summary?.iv) {
-      decryptedSummary = await Encryption.decryptText(session.summary, sessionKey);
-    }
-
-    const homeworkQuery = query(collection(db, 'homework'), where('sessionId', '==', session.id));
-    const homeworkSnap = await getDocs(homeworkQuery);
-    const decryptedHomework = await Promise.all(homeworkSnap.docs.map(async (homeworkDoc) => {
-      const homeworkData = homeworkDoc.data();
-      const title = await Encryption.decryptText({
-        ciphertext: homeworkData.title,
-        iv: homeworkData.titleIv,
-      }, sessionKey);
-      const description = await Encryption.decryptText({
-        ciphertext: homeworkData.description,
-        iv: homeworkData.descriptionIv,
-      }, sessionKey);
-
-      return {
-        title,
-        description,
-        dueDate: homeworkData.dueDate?.toDate?.()?.toISOString?.() || undefined,
-      };
-    }));
-
-    return {
-      decryptedSummary,
-      decryptedHomework,
-    };
-  };
 
   const handleGetTip = async () => {
     if (!activeSession || messages.length === 0) return;
