@@ -1262,7 +1262,7 @@ function MainApp() {
   };
 
   const handleVerifyPin = async () => {
-    if (!profile || pin.length < 6) return;
+    if (!profile || pin.length < 4) return;
 
     try {
       setAuthError(null);
@@ -2650,7 +2650,7 @@ function MainApp() {
             className="space-y-6"
             onSubmit={(e) => {
               e.preventDefault();
-              if (pin.length < 6) return;
+              if (profile ? pin.length < 4 : pin.length < 6) return;
               if (!profile && pinConfirm.length < 6) return;
               if (!profile && pin !== pinConfirm) return;
               if (profile) {
@@ -2690,9 +2690,11 @@ function MainApp() {
               {/* ✅ SECURITY FIX: Show PIN strength feedback */}
               <div className="mt-3 flex items-center justify-between text-xs">
                 <span className="text-stone-500">
-                  {pin.length}/6 {pin.length < 6 ? '(minimum 6 digits)' : ''}
+                  {profile
+                    ? `${pin.length}/4 ${pin.length < 4 ? '(minimum 4 digits)' : ''}`
+                    : `${pin.length}/6 ${pin.length < 6 ? '(minimum 6 digits)' : ''}`}
                 </span>
-                {pin.length >= 6 && (
+                {pin.length >= (profile ? 4 : 6) && (
                   <span className="text-emerald-600 flex items-center">
                     <CheckCircle className="w-3 h-3 mr-1" />
                     Strength: OK
@@ -2715,7 +2717,7 @@ function MainApp() {
             </div>
             <button 
               type="submit"
-              disabled={profile ? (pin.length < 6) : (pin.length < 6 || pinConfirm.length < 6 || pin !== pinConfirm)}
+              disabled={profile ? (pin.length < 4) : (pin.length < 6 || pinConfirm.length < 6 || pin !== pinConfirm)}
               className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {profile ? t('auth.unlockButton') : t('auth.initButton')}
