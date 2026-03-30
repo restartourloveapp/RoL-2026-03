@@ -1262,16 +1262,12 @@ function MainApp() {
   };
 
   const handleVerifyPin = async () => {
-    if (!profile || pin.length < 4) return;
+    if (!profile || pin.length < 6) return;
 
     try {
       setAuthError(null);
 
       if (!profile.pinSalt || !profile.pinVerifier || !profile.wrappedCK) {
-        throw new Error(t('auth.alerts.partnerAccountNotReady'));
-      }
-
-      if (!profile.wrappedExchangePrivateKey) {
         throw new Error(t('auth.alerts.partnerAccountNotReady'));
       }
 
@@ -1288,10 +1284,17 @@ function MainApp() {
         derivedKek
       );
 
-      const unwrappedExchangeKey = await Encryption.importPrivateKey(
-        profile.wrappedExchangePrivateKey,
-        derivedKek
-      );
+      let unwrappedExchangeKey: CryptoKey | null = null;
+      if (profile.wrappedExchangePrivateKey) {
+        try {
+          unwrappedExchangeKey = await Encryption.importPrivateKey(
+            profile.wrappedExchangePrivateKey,
+            derivedKek
+          );
+        } catch (exchangeError) {
+          console.warn('Failed to restore exchange key during PIN unlock', exchangeError);
+        }
+      }
 
       if (profile.wrappedRK) {
         const unwrappedRk = await Encryption.unwrapKey(profile.wrappedRK, derivedKek);
@@ -2650,7 +2653,7 @@ function MainApp() {
             className="space-y-6"
             onSubmit={(e) => {
               e.preventDefault();
-              if (profile ? pin.length < 4 : pin.length < 6) return;
+              if (pin.length < 6) return;
               if (!profile && pinConfirm.length < 6) return;
               if (!profile && pin !== pinConfirm) return;
               if (profile) {
@@ -2690,11 +2693,9 @@ function MainApp() {
               {/* ✅ SECURITY FIX: Show PIN strength feedback */}
               <div className="mt-3 flex items-center justify-between text-xs">
                 <span className="text-stone-500">
-                  {profile
-                    ? `${pin.length}/4 ${pin.length < 4 ? '(minimum 4 digits)' : ''}`
-                    : `${pin.length}/6 ${pin.length < 6 ? '(minimum 6 digits)' : ''}`}
+                  {pin.length}/6 {pin.length < 6 ? '(minimum 6 digits)' : ''}
                 </span>
-                {pin.length >= (profile ? 4 : 6) && (
+                {pin.length >= 6 && (
                   <span className="text-emerald-600 flex items-center">
                     <CheckCircle className="w-3 h-3 mr-1" />
                     Strength: OK
@@ -2717,7 +2718,7 @@ function MainApp() {
             </div>
             <button 
               type="submit"
-              disabled={profile ? (pin.length < 4) : (pin.length < 6 || pinConfirm.length < 6 || pin !== pinConfirm)}
+              disabled={profile ? (pin.length < 6) : (pin.length < 6 || pinConfirm.length < 6 || pin !== pinConfirm)}
               className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {profile ? t('auth.unlockButton') : t('auth.initButton')}
