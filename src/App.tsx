@@ -401,6 +401,8 @@ function MainApp() {
   const [selectedSpeakerUid, setSelectedSpeakerUid] = useState<string | null>(null);
   const [expectedResponderProfileId, setExpectedResponderProfileId] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const contextCacheRef = useRef<{ sessionId: string; messageCount: number; data: any } | null>(null);
+  const CONTEXT_REFRESH_INTERVAL_MESSAGES = 5;
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [sessionHomework, setSessionHomework] = useState<Array<{ title: string; description: string; dueDate?: string }>>([]);
@@ -447,6 +449,7 @@ function MainApp() {
 
   useEffect(() => {
     setExpectedResponderProfileId(null);
+    contextCacheRef.current = null;
   }, [activeSession?.id]);
 
   const resolveExpectedResponderProfileId = (
@@ -2284,7 +2287,7 @@ function MainApp() {
 
       // --- Context Gathering for AI Response ---
       setIsAiLoading(true);
-      
+      const cachedContext = contextCacheRef.current;
       const contextData: any = {
         messageSummaries: [],
         sessionSummaries: [],
@@ -2292,6 +2295,24 @@ function MainApp() {
         metaSummaries: [],
         lastHomework: null
       };
+      const canUseCachedContext = !!(
+        cachedContext &&
+        cachedContext.sessionId === activeSession.id &&
+        (newMessageCount - cachedContext.messageCount) < CONTEXT_REFRESH_INTERVAL_MESSAGES
+      );
+
+      if (canUseCachedContext && cachedContext) {
+        contextData.messageSummaries = [...(cachedContext.data.messageSummaries || [])];
+        contextData.sessionSummaries = [...(cachedContext.data.sessionSummaries || [])];
+        contextData.sharedPersonalSummaries = [...(cachedContext.data.sharedPersonalSummaries || [])];
+        contextData.metaSummaries = [...(cachedContext.data.metaSummaries || [])];
+        contextData.lastHomework = cachedContext.data.lastHomework || null;
+        if (cachedContext.data.pendingHomework) {
+          contextData.pendingHomework = [...cachedContext.data.pendingHomework];
+        }
+      }
+
+      if (!canUseCachedContext) {
 
       // 1. Get Message Summaries for this session
       try {
@@ -2588,6 +2609,20 @@ function MainApp() {
         );
         // Also keep lastHomework for backward compatibility
         contextData.lastHomework = `${pendingHomework[0].title}: ${pendingHomework[0].description}`;
+      }
+
+      contextCacheRef.current = {
+        sessionId: activeSession.id,
+        messageCount: newMessageCount,
+        data: {
+          messageSummaries: [...contextData.messageSummaries],
+          sessionSummaries: [...contextData.sessionSummaries],
+          sharedPersonalSummaries: [...contextData.sharedPersonalSummaries],
+          metaSummaries: [...contextData.metaSummaries],
+          pendingHomework: contextData.pendingHomework ? [...contextData.pendingHomework] : undefined,
+          lastHomework: contextData.lastHomework || null,
+        },
+      };
       }
 
       // --- AI Response Generation ---
