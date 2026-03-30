@@ -519,11 +519,48 @@ function MainApp() {
         : null)
     : null;
 
+  const inferAddressedProfileIdFromCoachText = (
+    coachText: string | undefined,
+    session?: ChatSession | null
+  ) => {
+    if (!coachText || !session || session.type !== 'couple') return null;
+
+    const normalize = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('nl-NL');
+
+    const head = normalize(coachText).slice(0, 120);
+    const ownerName = canonicalOwnerCoupleName?.trim();
+    const partnerName = canonicalPartnerCoupleName?.trim();
+
+    const matchesNameAtStart = (name?: string) => {
+      if (!name) return false;
+      const n = normalize(name);
+      if (!n) return false;
+      return head.startsWith(`${n},`) || head.startsWith(`${n} `) || head.startsWith(`${n}:`);
+    };
+
+    const ownerMatch = matchesNameAtStart(ownerName);
+    const partnerMatch = matchesNameAtStart(partnerName);
+
+    if (ownerMatch && !partnerMatch) return session.ownerProfileId || null;
+    if (partnerMatch && !ownerMatch) return session.partnerProfileId || null;
+    return null;
+  };
+
+  const linkedDeviceTurnProfileId = !isSharedDeviceMode
+    ? (isPartnerAccount
+      ? (activeSession?.partnerProfileId || null)
+      : (activeSession?.ownerProfileId || null))
+    : currentCoupleProfileId;
+
   const isTurnLockedOnThisDevice = !!(
     activeSession?.type === 'couple' &&
     !isSharedDeviceMode &&
     expectedResponderProfileId &&
-    expectedResponderProfileId !== currentCoupleProfileId
+    expectedResponderProfileId !== linkedDeviceTurnProfileId
   );
 
   const partnerDeviceMessagePlaceholder = activeSession?.type === 'couple' && !isSharedDeviceMode
@@ -2757,7 +2794,8 @@ function MainApp() {
           role: 'assistant'
         });
 
-        const nextResponderProfileId = resolveExpectedResponderProfileId(aiResult.nextSpeaker, activeSession);
+        const nextResponderProfileId = inferAddressedProfileIdFromCoachText(aiResult.text, activeSession)
+          || resolveExpectedResponderProfileId(aiResult.nextSpeaker, activeSession);
         setExpectedResponderProfileId(nextResponderProfileId);
 
         // Auto-select next speaker in couple sessions
