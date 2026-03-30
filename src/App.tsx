@@ -2986,20 +2986,11 @@ function MainApp() {
 
                       setIsConnectingAsPartner(true);
                       try {
-                        const response = await fetch('/api/connect-as-partner-device', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            partnerAccountUid: user.uid,
-                            connectionCode: partnerConnectionCode.toUpperCase(),
-                          })
+                        const fns = getFunctions(app, 'europe-west1');
+                        const callConnect = httpsCallable(fns, 'connectAsPartnerDevice');
+                        await callConnect({
+                          connectionCode: partnerConnectionCode.toUpperCase(),
                         });
-
-                        const data = await response.json().catch(() => ({}));
-                        if (!response.ok) {
-                          setConnectionCodeError(data?.error || 'Invalid or expired code. Ask your partner for a new one.');
-                          return;
-                        }
 
                         const profileSnap = await getDoc(doc(db, 'users', user.uid));
                         if (profileSnap.exists()) {
@@ -3011,7 +3002,10 @@ function MainApp() {
                         showToast('Partner device succesvol gekoppeld.', 'success');
                       } catch (err) {
                         console.error('Partner connection error:', err);
-                        setConnectionCodeError(err instanceof Error ? err.message : 'Connection failed');
+                        const message = err && typeof err === 'object' && 'message' in err
+                          ? String((err as { message?: string }).message)
+                          : 'Connection failed';
+                        setConnectionCodeError(message);
                       } finally {
                         setIsConnectingAsPartner(false);
                       }
