@@ -497,6 +497,13 @@ function MainApp() {
         : null)
     : null;
 
+  const isTurnLockedOnThisDevice = !!(
+    activeSession?.type === 'couple' &&
+    !isSharedDeviceMode &&
+    expectedResponderProfileId &&
+    expectedResponderProfileId !== currentCoupleProfileId
+  );
+
   const partnerDeviceMessagePlaceholder = activeSession?.type === 'couple' && !isSharedDeviceMode
     ? (expectedResponderProfileId && expectedResponderName
       ? (language === 'nl'
@@ -2148,6 +2155,17 @@ function MainApp() {
   const handleSendMessage = async () => {
     if (!activeSession || !activeSSK || !newMessage.trim()) return;
 
+    if (isTurnLockedOnThisDevice) {
+      const waitingFor = expectedResponderName || otherCoupleName || t('chat.partner');
+      showToast(
+        language === 'nl'
+          ? `Wachten op antwoord van '${waitingFor}'`
+          : `Waiting for a response from '${waitingFor}'`,
+        'info'
+      );
+      return;
+    }
+
     // Free tier check
     if (isFreeTierAccount && activeSession.messageCount >= 40) {
       showToast(t('auth.alerts.freeLimit'), 'error');
@@ -2177,6 +2195,19 @@ function MainApp() {
             senderProfileId = activeSession.ownerProfileId || profile?.profileId;
           }
         }
+      }
+
+      // Always provide explicit canonical speaker identity to the AI.
+      // In partner-device mode this guarantees the model interprets the text
+      // from the person behind the keyboard, independent of who was prompted.
+      let aiInputText = text;
+      if (activeSession.type === 'couple') {
+        const canonicalSpeaker = senderProfileId === activeSession.ownerProfileId
+          ? 'Partner 1'
+          : senderProfileId === activeSession.partnerProfileId
+            ? 'Partner 2'
+            : 'Partner';
+        aiInputText = `[${canonicalSpeaker}]: ${text}`;
       }
 
       await addDoc(collection(db, 'sessions', activeSession.id, 'messages'), {
@@ -2566,14 +2597,23 @@ function MainApp() {
         
         if (m.senderUid === 'ai_coach') {
           role = 'model';
-        } else if (m.senderProfileId === profile?.profileId || (m.senderUid === user!.uid && !m.senderProfileId)) {
-          // Current profile or user account (backward compatibility)
-          role = 'user';
-          content = `[Me]: ${content}`;
         } else {
-          // Partner profile
           role = 'user';
-          content = `[Partner]: ${content}`;
+          if (activeSession.type === 'couple') {
+            if (m.senderProfileId === activeSession.ownerProfileId) {
+              content = `[Partner 1]: ${content}`;
+            } else if (m.senderProfileId === activeSession.partnerProfileId) {
+              content = `[Partner 2]: ${content}`;
+            } else if (m.senderUid === user!.uid && !m.senderProfileId) {
+              content = `[Me]: ${content}`;
+            } else {
+              content = `[Partner]: ${content}`;
+            }
+          } else if (m.senderProfileId === profile?.profileId || (m.senderUid === user!.uid && !m.senderProfileId)) {
+            content = `[Me]: ${content}`;
+          } else {
+            content = `[Partner]: ${content}`;
+          }
         }
         
         return { role, content };
@@ -2635,7 +2675,7 @@ function MainApp() {
           activeSession.coachPersona,
           activeSession.coachGender,
           history,
-          text,
+          aiInputText,
           language,
           decryptedProfile ? {
             userName: decryptedProfile.name,
@@ -4841,20 +4881,26 @@ function MainApp() {
                       <textarea 
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
+                        disabled={isTurnLockedOnThisDevice}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
-                            if (newMessage.trim() && !isAiLoading) {
+                            if (newMessage.trim() && !isAiLoading && !isTurnLockedOnThisDevice) {
                               handleSendMessage();
                             }
                           }
                         }}
                         placeholder={coupleMessagePlaceholder}
-                        className="flex-1 bg-stone-50 border border-stone-200 rounded-2xl p-3 focus:outline-none focus:border-emerald-500 transition-all resize-none min-h-[44px] max-h-[120px] text-sm"
+                        className={cn(
+                          "flex-1 border border-stone-200 rounded-2xl p-3 focus:outline-none focus:border-emerald-500 transition-all resize-none min-h-[44px] max-h-[120px] text-sm",
+                          isTurnLockedOnThisDevice
+                            ? "bg-stone-100 text-stone-400 cursor-not-allowed"
+                            : "bg-stone-50"
+                        )}
                       />
                       <button 
                         onClick={handleSendMessage}
-                        disabled={!newMessage.trim() || isAiLoading}
+                        disabled={!newMessage.trim() || isAiLoading || isTurnLockedOnThisDevice}
                         className="p-3 bg-stone-900 text-white rounded-2xl disabled:opacity-50"
                       >
                         <Send className="w-5 h-5" />
