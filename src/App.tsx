@@ -132,6 +132,7 @@ interface ChatSession {
   partnerWrappedSSK?: { ciphertext: string; iv: string };
   lastCheckpointSummary?: { ciphertext: string; iv: string };
   summary?: { ciphertext: string; iv: string };
+  summaryStatus?: 'generating' | 'ready' | 'none';
 }
 
 interface ChatMessage {
@@ -775,12 +776,24 @@ function MainApp() {
       if (updated && (
         updated.status !== activeSession.status || 
         updated.messageCount !== activeSession.messageCount ||
-        updated.summary?.ciphertext !== activeSession.summary?.ciphertext
+        updated.summary?.ciphertext !== activeSession.summary?.ciphertext ||
+        updated.summaryStatus !== activeSession.summaryStatus
       )) {
         setActiveSession(updated);
       }
     }
   }, [sessions]);
+
+  useEffect(() => {
+    if (!activeSession?.id) {
+      setAutoOpenedSummarySessionId(null);
+      return;
+    }
+
+    if (autoOpenedSummarySessionId && autoOpenedSummarySessionId !== activeSession.id) {
+      setAutoOpenedSummarySessionId(null);
+    }
+  }, [activeSession?.id, autoOpenedSummarySessionId]);
 
   // --- Session Keys Unwrapping ---
   useEffect(() => {
@@ -1036,6 +1049,51 @@ function MainApp() {
     setIsCrisisDetected(false);
     setDetectedCrisisKeyword(null);
   }, [activeSession]);
+
+  useEffect(() => {
+    if (!activeSession || !activeSSK) return;
+
+    if (activeSession.status === 'beeindigd' && activeSession.summaryStatus === 'generating') {
+      setIsSummaryLoading(true);
+      return;
+    }
+
+    if (
+      activeSession.status === 'beeindigd' &&
+      activeSession.summaryStatus === 'ready' &&
+      activeSession.summary &&
+      autoOpenedSummarySessionId !== activeSession.id
+    ) {
+      let cancelled = false;
+
+      const syncSummaryToCurrentDevice = async () => {
+        try {
+          const payload = await loadSessionSummaryPayload(activeSession, activeSSK);
+          if (cancelled || !payload.decryptedSummary) return;
+
+          setSummary(payload.decryptedSummary);
+          setSessionHomework(payload.decryptedHomework);
+          setIsSummaryLoading(false);
+          setAutoOpenedSummarySessionId(activeSession.id);
+        } catch (error) {
+          if (!cancelled) {
+            console.error('Failed to sync summary to current device', error);
+            setIsSummaryLoading(false);
+          }
+        }
+      };
+
+      syncSummaryToCurrentDevice();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (activeSession.status === 'beeindigd' && activeSession.summaryStatus === 'none') {
+      setIsSummaryLoading(false);
+    }
+  }, [activeSession, activeSSK, autoOpenedSummarySessionId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1775,6 +1833,40 @@ function MainApp() {
   const [sessionHomework, setSessionHomework] = useState<Array<{ title: string; description: string; dueDate?: string }>>([]);
   const [responseTip, setResponseTip] = useState<string | null>(null);
   const [isTipLoading, setIsTipLoading] = useState(false);
+  const [autoOpenedSummarySessionId, setAutoOpenedSummarySessionId] = useState<string | null>(null);
+
+  const loadSessionSummaryPayload = async (session: ChatSession, sessionKey: CryptoKey) => {
+    let decryptedSummary: string | null = null;
+
+    if (session.summary?.ciphertext && session.summary?.iv) {
+      decryptedSummary = await Encryption.decryptText(session.summary, sessionKey);
+    }
+
+    const homeworkQuery = query(collection(db, 'homework'), where('sessionId', '==', session.id));
+    const homeworkSnap = await getDocs(homeworkQuery);
+    const decryptedHomework = await Promise.all(homeworkSnap.docs.map(async (homeworkDoc) => {
+      const homeworkData = homeworkDoc.data();
+      const title = await Encryption.decryptText({
+        ciphertext: homeworkData.title,
+        iv: homeworkData.titleIv,
+      }, sessionKey);
+      const description = await Encryption.decryptText({
+        ciphertext: homeworkData.description,
+        iv: homeworkData.descriptionIv,
+      }, sessionKey);
+
+      return {
+        title,
+        description,
+        dueDate: homeworkData.dueDate?.toDate?.()?.toISOString?.() || undefined,
+      };
+    }));
+
+    return {
+      decryptedSummary,
+      decryptedHomework,
+    };
+  };
 
   const handleGetTip = async () => {
     if (!activeSession || messages.length === 0) return;
@@ -1804,7 +1896,8 @@ function MainApp() {
       // Close the session immediately to prevent further messages
       await updateDoc(doc(db, 'sessions', activeSession.id), {
         status: 'beeindigd',
-        endedAt: serverTimestamp()
+        endedAt: serverTimestamp(),
+        summaryStatus: 'generating'
       });
 
       // Only generate summary if there are enough messages
@@ -1843,7 +1936,8 @@ function MainApp() {
           summary: {
             ciphertext: encryptedSummary.ciphertext,
             iv: encryptedSummary.iv
-          }
+          },
+          summaryStatus: 'ready'
         });
 
         // Open summary modal automatically
@@ -1983,10 +2077,22 @@ function MainApp() {
         }
       } else {
         // If not enough messages for a summary, just clear active session
+        await updateDoc(doc(db, 'sessions', activeSession.id), {
+          summaryStatus: 'none'
+        });
         setActiveSession(null);
       }
     } catch (e) {
       console.error("Summary failed with error:", e);
+      if (activeSession) {
+        try {
+          await updateDoc(doc(db, 'sessions', activeSession.id), {
+            summaryStatus: 'none'
+          });
+        } catch (statusError) {
+          console.error('Failed to reset summary status after summary error', statusError);
+        }
+      }
       showToast(t('sessions.summaryError'), 'error');
     } finally {
       setIsSummaryLoading(false);
