@@ -558,7 +558,21 @@ function MainApp() {
           console.log("📖 Firestore snapshot received:", { exists: docSnap.exists(), uid: u.uid });
           if (docSnap.exists()) {
             const data = docSnap.data() as UserProfile;
-            console.log("✅ User profile loaded:", { uid: data.uid, email: data.email });
+            console.log("✅ User profile loaded:", { 
+              uid: data.uid, 
+              email: data.email,
+              accountType: data.accountType,
+              mainAccountUid: data.mainAccountUid,
+              hasPinSalt: !!data.pinSalt,
+              hasPinVerifier: !!data.pinVerifier,
+              hasWrappedCK: !!data.wrappedCK,
+              wrappedCKStructure: data.wrappedCK ? { 
+                ciphertextType: typeof data.wrappedCK.ciphertext,
+                ciphertextLength: data.wrappedCK.ciphertext?.length,
+                ivType: typeof data.wrappedCK.iv,
+                ivLength: data.wrappedCK.iv?.length
+              } : null
+            });
             setProfile(data);
             if (data.language) setLanguage(data.language);
           } else {
