@@ -2207,8 +2207,15 @@ function MainApp() {
         if (isSharedDeviceMode) {
           senderProfileId = selectedSpeakerUid || profile?.profileId;
         } else {
-          // In partner-device mode, the person behind the keyboard is the signed-in profile.
-          senderProfileId = profile?.profileId || activeSession.ownerProfileId || activeSession.partnerProfileId;
+          // In linked-device mode the account role is canonical:
+          // - Main account device always represents Partner 1 (ownerProfileId)
+          // - Linked partner account always represents Partner 2 (partnerProfileId)
+          const isLinkedPartnerDevice = profile?.accountType === 'partner' && !!profile?.mainAccountUid;
+          if (isLinkedPartnerDevice) {
+            senderProfileId = activeSession.partnerProfileId || profile?.profileId;
+          } else {
+            senderProfileId = activeSession.ownerProfileId || profile?.profileId;
+          }
         }
       }
 
@@ -2217,11 +2224,13 @@ function MainApp() {
       // from the person behind the keyboard, independent of who was prompted.
       let aiInputText = text;
       if (activeSession.type === 'couple') {
-        const canonicalSpeaker = senderProfileId === activeSession.ownerProfileId
-          ? 'Partner 1'
-          : senderProfileId === activeSession.partnerProfileId
-            ? 'Partner 2'
-            : 'Partner';
+        const canonicalSpeaker = !isSharedDeviceMode
+          ? ((profile?.accountType === 'partner' && !!profile?.mainAccountUid) ? 'Partner 2' : 'Partner 1')
+          : (senderProfileId === activeSession.ownerProfileId
+            ? 'Partner 1'
+            : senderProfileId === activeSession.partnerProfileId
+              ? 'Partner 2'
+              : 'Partner');
         aiInputText = `[${canonicalSpeaker}]: ${text}`;
       }
 
