@@ -457,23 +457,8 @@ function MainApp() {
     session?: ChatSession | null
   ) => {
     if (!session || session.type !== 'couple') return null;
-    const ownerId = session.ownerProfileId || null;
-    const partnerId = session.partnerProfileId || null;
-    const currentProfileId = profile?.profileId || null;
-
-    const otherProfileId = currentProfileId === ownerId
-      ? partnerId
-      : currentProfileId === partnerId
-        ? ownerId
-        : null;
-
-    if (nextSpeaker === 'user') {
-      return currentProfileId || ownerId;
-    }
-
-    if (nextSpeaker === 'partner') {
-      return otherProfileId || partnerId || ownerId;
-    }
+    if (nextSpeaker === 'user') return session.ownerProfileId || null;
+    if (nextSpeaker === 'partner') return session.partnerProfileId || null;
 
     return null;
   };
