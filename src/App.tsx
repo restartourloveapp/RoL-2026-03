@@ -427,6 +427,18 @@ function MainApp() {
       : (activeSession.ownerProfileId || profile?.profileId || null))
     : (profile?.profileId || null);
 
+  const canonicalOwnerCoupleName = activeSession?.type === 'couple'
+    ? (isPartnerAccount
+      ? (decryptedProfile?.partnerName || t('chat.partner'))
+      : (decryptedProfile?.name || t('chat.you')))
+    : (decryptedProfile?.name || t('chat.you'));
+
+  const canonicalPartnerCoupleName = activeSession?.type === 'couple'
+    ? (isPartnerAccount
+      ? (decryptedProfile?.name || t('chat.you'))
+      : (decryptedProfile?.partnerName || t('chat.partner')))
+    : (decryptedProfile?.partnerName || t('chat.partner'));
+
   const currentCoupleName = activeSession?.type === 'couple'
     ? (isPartnerAccount
       ? (decryptedProfile?.partnerName || t('chat.you'))
@@ -440,7 +452,11 @@ function MainApp() {
     : t('chat.partner');
 
   const expectedResponderName = expectedResponderProfileId
-    ? (expectedResponderProfileId === currentCoupleProfileId ? currentCoupleName : otherCoupleName)
+    ? (expectedResponderProfileId === activeSession?.ownerProfileId
+      ? canonicalOwnerCoupleName
+      : expectedResponderProfileId === activeSession?.partnerProfileId
+        ? canonicalPartnerCoupleName
+        : null)
     : null;
 
   const partnerDeviceMessagePlaceholder = activeSession?.type === 'couple' && !isSharedDeviceMode
