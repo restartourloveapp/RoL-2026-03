@@ -1362,7 +1362,8 @@ function MainApp() {
           setRk(unwrappedRk);
           console.log('✅ RK restored');
         } catch (rkError) {
-          console.warn('⚠️ Failed to restore RK:', rkError);
+          // RK is optional - if it fails, just continue without it
+          console.log('ℹ️ RK unavailable (optional field):', (rkError as Error).message);
         }
       }
 
