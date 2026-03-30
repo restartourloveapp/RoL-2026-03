@@ -2194,6 +2194,7 @@ function MainApp() {
         messageCount: newMessageCount,
         lastMessageAt: serverTimestamp()
       };
+      const runMainOnlyEnhancements = !isPartnerAccount || isSharedDeviceMode;
 
       // --- Message Summary Logic (Every 20 messages) ---
       if (newMessageCount > 0 && newMessageCount % AI_CONFIG.MESSAGE_SUMMARY_INTERVAL === 0) {
@@ -2216,7 +2217,7 @@ function MainApp() {
       }
 
       // --- Checkpoint Summary Logic (Every 10 messages for UI/Timeline) ---
-      if (newMessageCount % 10 === 0) {
+      if (newMessageCount % 10 === 0 && runMainOnlyEnhancements) {
         // ... (existing checkpoint logic)
         const history = messages.map(m => ({
           role: m.senderUid === 'ai_coach' ? 'model' as const : 'user' as const,
@@ -2281,66 +2282,67 @@ function MainApp() {
       // For PERSONAL sessions: only previous personal sessions from current user
       // For COUPLE sessions: only previous couple sessions
       
-      console.debug(`[Context] Session type: ${activeSession.type}, fetching relevant previous sessions`);
-      
       let recentSessions: Array<[string, any]> = [];
+      if (runMainOnlyEnhancements) {
+        console.debug(`[Context] Session type: ${activeSession.type}, fetching relevant previous sessions`);
 
-      try {
-        if (activeSession.type === 'personal') {
-          // PERSONAL SESSION: Only get previous personal sessions where current user is owner
-          const personalQuery = query(
-            collection(db, 'sessions'),
-            where('ownerUid', '==', user!.uid),
-            where('type', '==', 'personal'),
-            orderBy('createdAt', 'desc'),
-            limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
-          );
-          
-          const personalSnap = await getDocs(personalQuery);
-          recentSessions = personalSnap.docs
-            .map(d => [d.id, d.data()] as [string, any])
-            .filter(([id]) => id !== activeSession.id);
-          
-          console.debug(`[Context] Personal session: Found ${recentSessions.length} previous personal sessions for current user`);
-        } else {
-          // COUPLE SESSION: Get previous couple sessions (from both owner and partner perspectives)
-          const coupleOwnerQuery = query(
-            collection(db, 'sessions'),
-            where('ownerUid', '==', user!.uid),
-            where('type', '==', 'couple'),
-            orderBy('createdAt', 'desc'),
-            limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
-          );
-          
-          const couplePartnerQuery = query(
-            collection(db, 'sessions'),
-            where('partnerUid', '==', user!.uid),
-            where('type', '==', 'couple'),
-            orderBy('createdAt', 'desc'),
-            limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
-          );
-          
-          const [coupleOwnerSnap, couplePartnerSnap] = await Promise.all([
-            getDocs(coupleOwnerQuery),
-            getDocs(couplePartnerQuery)
-          ]);
-          
-          const coupleSessions = new Map<string, any>();
-          coupleOwnerSnap.docs.forEach(d => coupleSessions.set(d.id, d.data()));
-          couplePartnerSnap.docs.forEach(d => coupleSessions.set(d.id, d.data()));
-          
-          recentSessions = Array.from(coupleSessions.entries())
-            .filter(([id]) => id !== activeSession.id)
-            .sort((a, b) => {
-              const timeA = a[1].createdAt?.toMillis?.() || 0;
-              const timeB = b[1].createdAt?.toMillis?.() || 0;
-              return timeB - timeA;
-            });
-          
-          console.debug(`[Context] Couple session: Found ${recentSessions.length} previous couple sessions`);
+        try {
+          if (activeSession.type === 'personal') {
+            // PERSONAL SESSION: Only get previous personal sessions where current user is owner
+            const personalQuery = query(
+              collection(db, 'sessions'),
+              where('ownerUid', '==', user!.uid),
+              where('type', '==', 'personal'),
+              orderBy('createdAt', 'desc'),
+              limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
+            );
+            
+            const personalSnap = await getDocs(personalQuery);
+            recentSessions = personalSnap.docs
+              .map(d => [d.id, d.data()] as [string, any])
+              .filter(([id]) => id !== activeSession.id);
+            
+            console.debug(`[Context] Personal session: Found ${recentSessions.length} previous personal sessions for current user`);
+          } else {
+            // COUPLE SESSION: Get previous couple sessions (from both owner and partner perspectives)
+            const coupleOwnerQuery = query(
+              collection(db, 'sessions'),
+              where('ownerUid', '==', user!.uid),
+              where('type', '==', 'couple'),
+              orderBy('createdAt', 'desc'),
+              limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
+            );
+            
+            const couplePartnerQuery = query(
+              collection(db, 'sessions'),
+              where('partnerUid', '==', user!.uid),
+              where('type', '==', 'couple'),
+              orderBy('createdAt', 'desc'),
+              limit(AI_CONFIG.MAX_RECENT_SESSION_SUMMARIES + 1)
+            );
+            
+            const [coupleOwnerSnap, couplePartnerSnap] = await Promise.all([
+              getDocs(coupleOwnerQuery),
+              getDocs(couplePartnerQuery)
+            ]);
+            
+            const coupleSessions = new Map<string, any>();
+            coupleOwnerSnap.docs.forEach(d => coupleSessions.set(d.id, d.data()));
+            couplePartnerSnap.docs.forEach(d => coupleSessions.set(d.id, d.data()));
+            
+            recentSessions = Array.from(coupleSessions.entries())
+              .filter(([id]) => id !== activeSession.id)
+              .sort((a, b) => {
+                const timeA = a[1].createdAt?.toMillis?.() || 0;
+                const timeB = b[1].createdAt?.toMillis?.() || 0;
+                return timeB - timeA;
+              });
+            
+            console.debug(`[Context] Couple session: Found ${recentSessions.length} previous couple sessions`);
+          }
+        } catch (e) {
+          console.warn('[Context] Failed to load recent session summaries, continuing without them', e);
         }
-      } catch (e) {
-        console.warn('[Context] Failed to load recent session summaries, continuing without them', e);
       }
 
       // Load summaries from recent sessions
@@ -2377,7 +2379,7 @@ function MainApp() {
       // 3. Get Shared Personal Summaries (COUPLE SESSIONS ONLY) - ONLY from timeline (explicit sharing)
       // CRITICAL: Personal sessions can ONLY be used as context if they appear in the couple's timeline
       // This ensures privacy: sessions are only included if BOTH partners explicitly shared them
-      if (activeSession.type === 'couple') {
+      if (activeSession.type === 'couple' && runMainOnlyEnhancements) {
         try {
           console.debug(`[Context] Couple session detected - scanning timeline for shared personal sessions`);
           
@@ -2453,31 +2455,38 @@ function MainApp() {
       }
 
       // 4. Get Meta Summaries (last 10)
-      try {
-        const metaSnap = await getDocs(query(
-          collection(db, 'users', user!.uid, 'session_meta_summaries'),
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        ));
-        for (const d of metaSnap.docs) {
-          const data = d.data();
-          try {
-            const dec = await Encryption.decryptText({ ciphertext: data.ciphertext, iv: data.iv }, ck!);
-            contextData.metaSummaries.push(dec);
-          } catch (e) {
-            console.error("Failed to decrypt meta summary", e);
+      if (runMainOnlyEnhancements) {
+        try {
+          const metaSnap = await getDocs(query(
+            collection(db, 'users', user!.uid, 'session_meta_summaries'),
+            orderBy('createdAt', 'desc'),
+            limit(10)
+          ));
+          for (const d of metaSnap.docs) {
+            const data = d.data();
+            try {
+              const dec = await Encryption.decryptText({ ciphertext: data.ciphertext, iv: data.iv }, ck!);
+              contextData.metaSummaries.push(dec);
+            } catch (e) {
+              console.error("Failed to decrypt meta summary", e);
+            }
           }
+        } catch (e) {
+          console.warn('[Context] Failed to load meta summaries, continuing without them', e);
         }
-      } catch (e) {
-        console.warn('[Context] Failed to load meta summaries, continuing without them', e);
       }
 
       // 5. Get Pending Homework (all unfinished homework for follow-up check)
-      console.debug(`[Context] Fetching pending homework for user ${user!.uid.slice(0, 6)}...`);
+      if (runMainOnlyEnhancements) {
+        console.debug(`[Context] Fetching pending homework for user ${user!.uid.slice(0, 6)}...`);
+      }
       
       // Get homework where current user is owner
       const pendingHomework: Array<{ title: string; description: string; dueDate?: string }> = [];
       try {
+        if (!runMainOnlyEnhancements) {
+          throw new Error('Skipped pending-homework context on linked partner device');
+        }
         const hwOwnerSnap = await getDocs(query(
           collection(db, 'homework'),
           where('ownerUid', '==', user!.uid),
@@ -2535,7 +2544,9 @@ function MainApp() {
           }
         }
       } catch (e) {
-        console.warn('[Context] Failed to load pending homework, continuing without it', e);
+        if (runMainOnlyEnhancements) {
+          console.warn('[Context] Failed to load pending homework, continuing without it', e);
+        }
       }
       
       console.debug(`[Context] Successfully loaded ${pendingHomework.length} homework items`);
